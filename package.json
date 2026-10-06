@@ -4,9 +4,9 @@
   "private": true,
   "description": "Personal AI operating system — AI Chief of Staff + AI Workforce Manager",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/serve.mjs dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/serve.mjs start",
     "lint": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },

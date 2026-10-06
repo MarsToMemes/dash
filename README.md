@@ -8,12 +8,16 @@ Chaque tâche est classée selon *qui* l'exécute (`YOU`, `AI`, `AI + YOU`, `WAI
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000
+npm run dev          # http://localhost:4100 (l'adresse exacte s'affiche au démarrage)
 npm test             # classificateur + planificateur (node:test)
 npm run lint         # typecheck
 ```
 
-Node ≥ 22.13 (utilise `node:sqlite`, intégré). La base est créée dans `data/dash.db` au premier lancement et remplie avec un espace de démo (Patrick Pons, Jobsy, Kopi, AI Video Editor, Plug Leak). `⌘K → Reset demo workspace` la réinitialise.
+Node ≥ 22.13 (utilise `node:sqlite`, intégré).
+
+**Ports** : `npm run dev` et `npm start` passent par `scripts/serve.mjs`, qui vérifie que le port est libre avant de lancer Next.js. Le port 3000 est réservé (site Patrick Pons) et n'est jamais utilisé. Par défaut Dash démarre sur 4100 ; s'il est pris, il essaie 4101, 4102… et affiche l'adresse retenue. Pour changer : `PORT=5000 npm run dev`, et `DASH_RESERVED_PORTS=3000,5173` pour réserver d'autres ports.
+
+La base est créée dans `data/dash.db` au premier lancement et remplie avec un espace de démo (Patrick Pons, Jobsy, Kopi, AI Video Editor, Plug Leak). `⌘K → Reset demo workspace` la réinitialise.
 
 ### Avec Claude (optionnel)
 
