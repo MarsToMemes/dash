@@ -83,3 +83,14 @@ CREATE TABLE IF NOT EXISTS settings (
   id    INTEGER PRIMARY KEY CHECK (id = 1),
   data  TEXT NOT NULL
 );
+
+-- Strategic memory: what Rémi decided, so the system stops re-asking.
+CREATE TABLE IF NOT EXISTS decisions (
+  id          TEXT PRIMARY KEY,
+  at          INTEGER NOT NULL,
+  kind        TEXT NOT NULL CHECK (kind IN ('focus','tradeoff','park','revive','strategy','automate','note','postpone')),
+  project_id  TEXT,
+  until       INTEGER,
+  data        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS decisions_at ON decisions(at);

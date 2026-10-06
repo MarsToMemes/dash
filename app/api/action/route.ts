@@ -7,6 +7,8 @@ const TYPES = new Set<Action["type"]>([
   "create_task", "run_task", "run_all", "delegate", "assign_me", "start_task", "complete_task",
   "approve_job", "reject_job", "cancel_job", "retry_job", "accept_opportunity", "dismiss_opportunity",
   "set_autopilot", "analyze", "reorder", "delegation_answer", "dismiss_day_update", "reset",
+  "postpone", "procrastination_answer", "focus_project", "exit_focus", "set_max_leverage", "set_context",
+  "build_day", "clear_day_plan", "park_project", "revive_project", "apply_triage", "tradeoff_answer", "tell", "automate",
 ]);
 
 export async function POST(req: Request) {
@@ -20,6 +22,12 @@ export async function POST(req: Request) {
   if (!action || !TYPES.has(action.type)) return Response.json({ error: "Unknown action" }, { status: 400 });
   if (action.type === "create_task" && (typeof action.title !== "string" || action.title.length > 500)) {
     return Response.json({ error: "Invalid title" }, { status: 400 });
+  }
+  if (action.type === "tell" && (typeof action.text !== "string" || action.text.length > 500)) {
+    return Response.json({ error: "Invalid text" }, { status: 400 });
+  }
+  if (action.type === "build_day" && !["finish", "build", "revenue", "balanced"].includes(action.strategy)) {
+    return Response.json({ error: "Invalid strategy" }, { status: 400 });
   }
   return Response.json(await dispatch(action, tz === null ? null : Number(tz)));
 }

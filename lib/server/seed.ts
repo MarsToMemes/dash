@@ -29,6 +29,14 @@ export function seed(s: Store, now: number, tzOffsetMin: number) {
     lastAnalysisAt: null,
     dayUpdate: null,
     delegationPrompt: null,
+    maxLeverage: false,
+    energy: "high",
+    place: "desk",
+    focus: null,
+    dayPlan: null,
+    // Yesterday's score, so the trend ("91 → 87") has something to compare with.
+    efficiencyHistory: [{ day: todayAt(now - DAY, tzOffsetMin, 0), score: 74 }],
+    manualOrderAt: null,
   };
   s.state.settings = settings;
   s.touchSettings();
@@ -37,11 +45,21 @@ export function seed(s: Store, now: number, tzOffsetMin: number) {
   const tomorrowAt = (h: number, m = 0) => todayAt(now + DAY, tzOffsetMin, h * 60 + m);
 
   const projects: Project[] = [
-    project("pp", "Patrick Pons", "#4f8cff", "Website redesign for a Paris motorcycle dealer", "building", 28, now - 1 * HOUR),
-    project("jobsy", "Jobsy", "#a78bfa", "Job-matching SaaS — design and front-end", "building", 9, now - 1 * DAY),
-    project("kopi", "Kopi", "#2dd4bf", "Specialty coffee e-shop, launched last week", "deployed", 18, now - 2 * DAY),
-    project("aive", "AI Video Editor", "#fb7185", "Side project: AI-assisted video editing tool", "building", 6, now - 6 * DAY),
-    project("plug", "Plug Leak", "#94a3b8", "Small Chrome extension, maintenance only", "shipped", 12, now - 12 * DAY),
+    project("pp", "Patrick Pons", "#4f8cff", "Website redesign for a Paris motorcycle dealer", "building", 28, now - 1 * HOUR, {
+      kind: "client", strategicValue: 5, revenuePotential: 4, goal: "Launch the redesign + portfolio case study", deadline: now + 4 * DAY,
+    }),
+    project("jobsy", "Jobsy", "#a78bfa", "Job-matching SaaS — design and front-end", "building", 9, now - 1 * DAY, {
+      kind: "product", strategicValue: 4, revenuePotential: 4, goal: "Open the onboarding beta", deadline: now + 12 * DAY,
+    }),
+    project("kopi", "Kopi", "#2dd4bf", "Specialty coffee e-shop, launched three weeks ago", "deployed", 18, now - 9 * DAY, {
+      kind: "client", strategicValue: 2, revenuePotential: 3, goal: null, deadline: null,
+    }),
+    project("aive", "AI Video Editor", "#fb7185", "Side project: AI-assisted video editing tool", "building", 6, now - 6 * DAY, {
+      kind: "side", strategicValue: 2, revenuePotential: 2, goal: "Working export prototype", deadline: null,
+    }),
+    project("plug", "Plug Leak", "#94a3b8", "Small Chrome extension, maintenance only", "shipped", 12, now - 12 * DAY, {
+      kind: "side", strategicValue: 1, revenuePotential: 1, goal: null, deadline: null,
+    }),
   ];
   for (const p of projects) {
     s.state.projects.push(p);
@@ -214,15 +232,31 @@ export function seed(s: Store, now: number, tzOffsetMin: number) {
   add("Clean up Jobsy task backlog", { projectId: "jobsy", priority: "low" });
   add("Prepare 15 outreach prospects", { projectId: null });
 
+  // Queue optimization demo: an older refactor is queued, but the onboarding bug
+  // blocks Rémi's review — the Coding Agent should take the bug first.
+  const refactor = add("Refactor Jobsy settings page", { projectId: "jobsy", priority: "low" });
+  refactor.status = "ai_queued";
+  job(refactor, "QUEUED", { created_at: now - 50 * MIN });
+  const bug = add("Fix Jobsy onboarding bug", { projectId: "jobsy", priority: "high" });
+  bug.status = "ai_queued";
+  job(bug, "QUEUED", { created_at: now - 5 * MIN });
+  add("Review Jobsy onboarding flow", { projectId: "jobsy", dependsOn: [bug.id], humanMinutes: 30, priority: "high" });
+
+  // "Don't do this" demo: Rémi kept a task an agent could do on its own.
+  add("Fix Jobsy signup form validation", { projectId: "jobsy", keptHuman: true, humanMinutes: 45 });
+
+  // Procrastination demo: pushed back four times.
+  add("Create Jobsy landing page", { projectId: "jobsy", postponedCount: 4, createdAt: now - 12 * DAY, humanMinutes: 120 });
+
   // ---- Kopi ---------------------------------------------------------------
   add("Waiting for Kopi brand photography", {
     projectId: "kopi",
     waitingOn: "Kopi",
-    createdAt: now - 4 * DAY,
+    createdAt: now - 10 * DAY,
     followUpAt: now - MIN, // overdue: the AI drafts a follow-up on first load
   });
-  add("Create 3 Kopi label concepts", { projectId: "kopi" });
-  add("Draft Kopi launch newsletter", { projectId: "kopi" });
+  add("Create 3 Kopi label concepts", { projectId: "kopi", createdAt: now - 11 * DAY });
+  add("Draft Kopi launch newsletter", { projectId: "kopi", postponedCount: 2, createdAt: now - 11 * DAY });
 
   // ---- AI Video Editor ------------------------------------------------------
   add("Fix AI Video Editor export bug", { projectId: "aive", createdAt: now - 6 * DAY });
@@ -241,10 +275,10 @@ export function seed(s: Store, now: number, tzOffsetMin: number) {
     ["Write product page SEO metadata", "pp", 1.1],
     ["Check broken links on the legacy site", "pp", 0.9],
     ["Research job board pricing models", "jobsy", 3.4],
-    ["Summarize Kopi customer interviews", "kopi", 2.9],
-    ["Organize Kopi brand files", "kopi", 2.1],
+    ["Summarize Kopi customer interviews", "kopi", 9.4],
+    ["Organize Kopi brand files", "kopi", 10.1],
     ["Draft Jobsy onboarding emails", "jobsy", 1.3],
-    ["Analyze Kopi launch-week metrics", "kopi", 0.12],
+    ["Analyze Jobsy signup funnel", "jobsy", 0.12],
   ];
   for (const [title, projectId, daysAgo] of history) {
     const done = now - daysAgo * DAY;
@@ -259,14 +293,26 @@ export function seed(s: Store, now: number, tzOffsetMin: number) {
       result: `**${title}** — delivered.`,
     });
   }
-  const humanHistory: [string, string, number][] = [
-    ["Kick-off call with Patrick Pons", "pp", 4.5],
-    ["Choose Patrick Pons typography", "pp", 2.6],
-    ["Present Kopi launch plan to the founders", "kopi", 5.1],
+  // What Rémi did himself — including work an agent could have done (wasted time).
+  const humanHistory: [string, string, number, number, boolean][] = [
+    ["Kick-off call with Patrick Pons", "pp", 4.5, 30, false],
+    ["Choose Patrick Pons typography", "pp", 2.6, 45, false],
+    ["Client workshop with Patrick Pons", "pp", 1.5, 90, false],
+    ["Present Kopi launch plan to the founders", "kopi", 9.1, 60, false],
+    ["Write Jobsy weekly update email", "jobsy", 1.2, 35, true],
+    ["Write Jobsy weekly update email", "jobsy", 8.2, 40, true],
+    ["Check Kopi analytics dashboard", "kopi", 2.2, 25, true],
   ];
-  for (const [title, projectId, daysAgo] of humanHistory) {
+  for (const [title, projectId, daysAgo, minutes, delegable] of humanHistory) {
     const done = now - daysAgo * DAY;
-    add(title, { projectId, status: "done", completedAt: done, createdAt: done - DAY });
+    const t = add(title, { projectId, status: "done", completedAt: done, createdAt: done - DAY, actualHumanMinutes: minutes });
+    if (title.startsWith("Client workshop")) t.humanKind = "meeting";
+    if (delegable) {
+      t.keptHuman = true;
+      t.humanMinutes = minutes;
+    } else if (t.mode !== "YOU") {
+      t.mode = "YOU";
+    }
   }
 
   // Deliberately in creation order, not ranked: the first analysis on load
@@ -306,6 +352,7 @@ function project(
   stage: Project["stage"],
   legacyDone: number,
   lastActivityAt: number,
+  extra: Pick<Project, "kind" | "strategicValue" | "revenuePotential" | "goal" | "deadline">,
 ): Project {
-  return { id, name, color, description, stage, health: "on_track", healthChangedAt: null, progress: 0, legacyDone, lastActivityAt };
+  return { id, name, color, description, stage, health: "on_track", healthChangedAt: null, progress: 0, legacyDone, lastActivityAt, parkedUntil: null, ...extra };
 }

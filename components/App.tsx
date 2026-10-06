@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { BarChart3, CalendarDays, Command, Cpu, FolderKanban, House, Moon, Plus, Search, Sun } from "lucide-react";
+import { BarChart3, CalendarDays, Command, Compass, Cpu, FolderKanban, House, Moon, Plus, Search, Sun } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, MotionConfig } from "motion/react";
 import { useEffect } from "react";
 import { AddTask } from "./overlays/AddTask";
@@ -15,6 +15,7 @@ import { Home } from "./views/Home";
 import { Insights } from "./views/Insights";
 import { Projects } from "./views/Projects";
 import { Queue } from "./views/Queue";
+import { Strategy } from "./views/Strategy";
 import { Today } from "./views/Today";
 
 export function App() {
@@ -30,6 +31,7 @@ export function App() {
 const NAV: { id: View; label: string; icon: typeof House }[] = [
   { id: "home", label: "Home", icon: House },
   { id: "today", label: "Today", icon: CalendarDays },
+  { id: "strategy", label: "Strategy", icon: Compass },
   { id: "queue", label: "AI Queue", icon: Cpu },
   { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "insights", label: "Insights", icon: BarChart3 },
@@ -80,6 +82,7 @@ function Shell() {
                   >
                     {view === "home" && <Home />}
                     {view === "today" && <Today />}
+                    {view === "strategy" && <Strategy />}
                     {view === "queue" && <Queue />}
                     {view === "projects" && <Projects />}
                     {view === "insights" && <Insights />}

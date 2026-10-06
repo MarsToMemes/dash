@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Action, WorkspaceState } from "@/lib/types";
 
-export type View = "home" | "today" | "queue" | "projects" | "insights";
+export type View = "home" | "today" | "strategy" | "queue" | "projects" | "insights";
 
 export const THINKING_STEPS = [
   "Analyzing your projects…",
@@ -37,6 +37,9 @@ interface Ctx {
   whatShouldIDo: (opts?: { quick?: boolean }) => Promise<void>;
   theme: "dark" | "light";
   toggleTheme: () => void;
+  /** Minutes for the Time Arbitrage panel ("I have 90 minutes"). */
+  arbitrageMinutes: number;
+  setArbitrageMinutes: (m: number) => void;
 }
 
 const WorkspaceCtx = createContext<Ctx | null>(null);
@@ -55,6 +58,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [thinking, setThinking] = useState<string | null>(null);
   const [resolvedAt, setResolvedAt] = useState(0);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [arbitrageMinutes, setArbitrageMinutes] = useState(90);
   const offset = useRef(0);
   const latest = useRef(0);
   const thinkingRef = useRef(false);
@@ -194,6 +198,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     whatShouldIDo,
     theme,
     toggleTheme,
+    arbitrageMinutes,
+    setArbitrageMinutes,
   };
   return <WorkspaceCtx.Provider value={value}>{children}</WorkspaceCtx.Provider>;
 }

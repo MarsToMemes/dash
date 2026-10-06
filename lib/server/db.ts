@@ -2,7 +2,7 @@ import "server-only";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { Activity, AgentJob, Opportunity, Project, Settings, Task, WorkspaceState } from "../types.ts";
+import type { Activity, AgentJob, Decision, Opportunity, Project, Settings, Task, WorkspaceState } from "../types.ts";
 
 // The workspace lives in memory (single process) and is written through to
 // SQLite at the end of every request. Mutations mark entities dirty; flush()
@@ -12,7 +12,7 @@ const DB_PATH = process.env.DASH_DB_PATH ?? path.join(process.cwd(), "data", "da
 
 export interface Store {
   state: Omit<WorkspaceState, "now" | "claudeEnabled">;
-  touch(kind: "project" | "task" | "job" | "opportunity", id: string): void;
+  touch(kind: "project" | "task" | "job" | "opportunity" | "decision", id: string): void;
   touchActivity(a: Activity): void;
   touchSettings(): void;
   flush(): void;
@@ -51,13 +51,41 @@ function jobFromRow(r: Row): AgentJob {
   };
 }
 
+// Older workspaces predate the intelligence layer: fill new fields with safe defaults.
+function migrateProject(p: Project): Project {
+  return Object.assign({
+    kind: "client",
+    strategicValue: 3,
+    revenuePotential: 3,
+    goal: null,
+    deadline: null,
+    parkedUntil: null,
+    legacyDone: 0,
+  }, p);
+}
+
+function migrateTask(t: Task): Task {
+  return Object.assign({ postponedCount: 0, actualHumanMinutes: null, autoRun: false, isMission: false }, t);
+}
+
+function migrateSettings(s: Settings): Settings {
+  return Object.assign({
+    maxLeverage: false,
+    energy: "medium",
+    place: "desk",
+    focus: null,
+    dayPlan: null,
+    efficiencyHistory: [],
+  }, s);
+}
+
 function load(db: DatabaseSync): Store["state"] | null {
   const settingsRow = db.prepare("SELECT data FROM settings WHERE id = 1").get() as Row | undefined;
   if (!settingsRow) return null;
   return {
-    settings: JSON.parse(settingsRow.data as string) as Settings,
-    projects: (db.prepare("SELECT data FROM projects").all() as Row[]).map((r) => JSON.parse(r.data as string) as Project),
-    tasks: (db.prepare("SELECT data FROM tasks").all() as Row[]).map((r) => JSON.parse(r.data as string) as Task),
+    settings: migrateSettings(JSON.parse(settingsRow.data as string) as Settings),
+    projects: (db.prepare("SELECT data FROM projects").all() as Row[]).map((r) => migrateProject(JSON.parse(r.data as string) as Project)),
+    tasks: (db.prepare("SELECT data FROM tasks").all() as Row[]).map((r) => migrateTask(JSON.parse(r.data as string) as Task)),
     jobs: (db.prepare("SELECT * FROM agent_jobs").all() as Row[]).map(jobFromRow),
     activity: (db.prepare("SELECT * FROM activity ORDER BY at DESC LIMIT 200").all() as Row[]).map((r) => ({
       id: r.id as string,
@@ -68,6 +96,7 @@ function load(db: DatabaseSync): Store["state"] | null {
       taskId: (r.task_id as string | null) ?? null,
     })),
     opportunities: (db.prepare("SELECT data FROM opportunities").all() as Row[]).map((r) => JSON.parse(r.data as string) as Opportunity),
+    decisions: (db.prepare("SELECT data FROM decisions ORDER BY at DESC").all() as Row[]).map((r) => JSON.parse(r.data as string) as Decision),
   };
 }
 
@@ -80,9 +109,16 @@ function createStore(): Store {
     jobs: [],
     activity: [],
     opportunities: [],
+    decisions: [],
   };
   const state = load(db) ?? empty;
-  const dirty = { project: new Set<string>(), task: new Set<string>(), job: new Set<string>(), opportunity: new Set<string>() };
+  const dirty = {
+    project: new Set<string>(),
+    task: new Set<string>(),
+    job: new Set<string>(),
+    opportunity: new Set<string>(),
+    decision: new Set<string>(),
+  };
   let dirtyActivity: Activity[] = [];
   let dirtySettings = false;
 
@@ -113,6 +149,10 @@ function createStore(): Store {
   const upsertOpp = db.prepare(
     `INSERT INTO opportunities (id, key, project_id, status, created_at, data) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET status=excluded.status, data=excluded.data`,
+  );
+  const upsertDecision = db.prepare(
+    `INSERT INTO decisions (id, at, kind, project_id, until, data) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET until=excluded.until, data=excluded.data`,
   );
   const upsertSettings = db.prepare(
     "INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
@@ -154,6 +194,10 @@ function createStore(): Store {
           const o = state.opportunities.find((x) => x.id === id);
           if (o) upsertOpp.run(o.id, o.key, o.projectId, o.status, o.createdAt, JSON.stringify(o));
         }
+        for (const id of dirty.decision) {
+          const d = state.decisions.find((x) => x.id === id);
+          if (d) upsertDecision.run(d.id, d.at, d.kind, d.projectId, d.until, JSON.stringify(d));
+        }
         for (const a of dirtyActivity) insertActivity.run(a.id, a.at, a.actor, a.kind, a.text, a.taskId);
         if (dirtySettings) upsertSettings.run(JSON.stringify(state.settings));
         db.exec("COMMIT");
@@ -166,12 +210,15 @@ function createStore(): Store {
       dirtySettings = false;
     },
     wipe() {
-      db.exec("DELETE FROM activity; DELETE FROM agent_jobs; DELETE FROM tasks; DELETE FROM opportunities; DELETE FROM projects; DELETE FROM settings;");
+      db.exec(
+        "DELETE FROM activity; DELETE FROM agent_jobs; DELETE FROM tasks; DELETE FROM opportunities; DELETE FROM decisions; DELETE FROM projects; DELETE FROM settings;",
+      );
       state.projects = [];
       state.tasks = [];
       state.jobs = [];
       state.activity = [];
       state.opportunities = [];
+      state.decisions = [];
       state.settings = null as unknown as Settings;
     },
   };

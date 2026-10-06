@@ -4,9 +4,12 @@ import { RefreshCw, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { AGENT_ORDER } from "@/lib/agents";
 import { availableMinutes, fmtDuration, localMinuteOfDay, workforce } from "@/lib/planner";
-import { ActivityFeed, AiFoundThis, Kpis, ProjectPulse, TodayTimeline } from "../home/Sections";
+import { ActivityFeed, TodayTimeline } from "../home/Sections";
 import { NextMove } from "../home/NextMove";
 import { Workforce } from "../home/Workforce";
+import { FocusBanner, MetricTiles, ProjectMomentumList, WhileYouWork } from "../intel/Metrics";
+import { ContextBar } from "../intel/Planner";
+import { Recommendations } from "../intel/Recommendations";
 import { useNow, useWorkspace } from "../store";
 import { AgentAvatar, AnimatedNumber, Button, enter } from "../ui";
 
@@ -20,33 +23,33 @@ export function Home() {
         <Hero now={now} />
       </motion.div>
       <DayUpdate now={now} />
+      <FocusBanner now={now} />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
         <motion.div variants={enter} custom={1} className="xl:col-span-8">
           <NextMove now={now} />
         </motion.div>
         <motion.div variants={enter} custom={2} className="xl:col-span-4">
-          <Kpis now={now} />
+          <WhileYouWork />
         </motion.div>
       </div>
       <motion.div variants={enter} custom={3}>
-        <Workforce now={now} />
+        <MetricTiles now={now} />
       </motion.div>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <motion.div variants={enter} custom={4} className="xl:col-span-7">
-          <AiFoundThis now={now} />
+          <Recommendations now={now} limit={4} />
         </motion.div>
-        <motion.div variants={enter} custom={5} className="xl:col-span-5">
-          <ActivityFeed />
-        </motion.div>
-      </div>
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <motion.div variants={enter} custom={6} className="xl:col-span-7">
-          <TodayTimeline now={now} />
-        </motion.div>
-        <motion.div variants={enter} custom={7} className="xl:col-span-5">
-          <ProjectPulse now={now} />
+        <motion.div variants={enter} custom={5} className="flex flex-col gap-6 xl:col-span-5">
+          <ProjectMomentumList now={now} />
+          <ActivityFeed limit={6} />
         </motion.div>
       </div>
+      <motion.div variants={enter} custom={6}>
+        <Workforce now={now} />
+      </motion.div>
+      <motion.div variants={enter} custom={7}>
+        <TodayTimeline now={now} />
+      </motion.div>
     </motion.div>
   );
 }
@@ -87,6 +90,9 @@ function Hero({ now }: { now: number }) {
           <span>
             <span className="font-semibold text-ai">{wf.ai.length}</span> handled by AI
           </span>
+        </div>
+        <div className="mt-5">
+          <ContextBar />
         </div>
       </div>
       <div className="flex items-center gap-4">

@@ -12,7 +12,7 @@ function t(partial: Partial<Task>): Task {
     mode: "YOU", automation: 0, agent: null, risk: "low", humanValue: 3, priority: "medium", humanKind: "generic",
     humanMinutes: 15, aiMinutes: 0, manualMinutes: 15, status: "todo", reason: "", aiPrep: [], tags: [],
     waitingOn: null, followUpAt: null, scheduledAt: null, location: null, dependsOn: [], source: "user", rank: 0,
-    keptHuman: false, autoRun: false, isMission: false, createdAt: NOW, startedAt: null, completedAt: null,
+    keptHuman: false, autoRun: false, isMission: false, postponedCount: 0, actualHumanMinutes: null, createdAt: NOW, startedAt: null, completedAt: null,
     delegatedAt: null, unlockedAt: null, handoffAt: null, unlockedBy: null, ...partial,
   };
 }
@@ -20,6 +20,7 @@ function t(partial: Partial<Task>): Task {
 const settings: Settings = {
   autopilot: false, simSecondsPerMinute: 3, dayStartMin: 540, dayEndMin: 1140, tzOffsetMin: TZ, userName: "Rémi",
   delegationRules: [], lastAnalysisAt: null, dayUpdate: null, delegationPrompt: null,
+  maxLeverage: false, energy: "medium", place: "desk", focus: null, dayPlan: null, efficiencyHistory: [],
 };
 
 test("timezone helpers round-trip local time", () => {

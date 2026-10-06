@@ -365,3 +365,17 @@ export function useTicker(ms: number) {
     return () => clearInterval(iv);
   }, [ms]);
 }
+
+/** humanLeverageScore as a compact badge — warm when Rémi's presence matters. */
+export function LeverageBadge({ score, className }: { score: number; className?: string }) {
+  const tone = score >= 8 ? "bg-human text-[#1b1406]" : score >= 6 ? "bg-human-soft text-human" : score >= 4 ? "bg-card-2 text-ink-2" : "bg-ai-soft text-ai";
+  return (
+    <span title="Human leverage (0–10)" className={clsx("tabular inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px] font-bold", tone, className)}>
+      {score.toFixed(1)}
+    </span>
+  );
+}
+
+export function Eyebrow({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={clsx("text-[10.5px] font-bold tracking-[0.14em] text-ink-3 uppercase", className)}>{children}</div>;
+}

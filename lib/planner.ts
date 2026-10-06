@@ -305,49 +305,40 @@ export interface OpportunityProposal {
 export function discoverOpportunities(state: Pick<WorkspaceState, "projects" | "tasks">, now: number): OpportunityProposal[] {
   const out: OpportunityProposal[] = [];
   for (const p of state.projects) {
+    if (p.parkedUntil && p.parkedUntil > now) continue;
     const mine = state.tasks.filter((t) => t.projectId === p.id);
     const has = (tag: string) => mine.some((t) => t.tags.some((x) => x.toLowerCase() === tag));
     const progress = projectProgress(p, state.tasks);
 
-    // Almost finished, nothing to show for it yet → portfolio case study.
+    // Almost finished, nothing to show for it yet → turn it into a commercial asset.
     if (progress >= 0.8 && p.stage === "building" && !has("case study")) {
       out.push({
         key: `case-study:${p.id}`,
         projectId: p.id,
-        title: `${p.name} is ready for a case study`,
-        summary: `Your ${p.name} project is ${Math.round(progress * 100)}% complete but has no portfolio case study. I can prepare everything — you only approve and publish.`,
+        title: `${p.name} is strong enough to become a commercial asset`,
+        summary: `${p.name} is ${Math.round(progress * 100)}% complete, with no case study, no portfolio post and no outreach behind it. I can prepare everything — you approve and publish.`,
         drafts: [
           { title: `Capture ${p.name} screenshots`, mode: "AI", agent: "design", tags: ["Case study", "Design"] },
           { title: `Write ${p.name} case-study structure and copy`, mode: "AI", agent: "content", tags: ["Case study", "Content"] },
-          { title: `Approve and publish ${p.name} case study`, mode: "YOU", humanKind: "decision", tags: ["Case study"], after: [0, 1], risk: "medium" },
+          { title: `Prepare ${p.name} Dribbble presentation`, mode: "AI", agent: "design", tags: ["Case study", "Design"], after: [0] },
+          { title: `Research 15 prospects similar to ${p.name}`, mode: "AI", agent: "research", tags: ["Case study", "Sales"] },
+          { title: `Draft personalized outreach using the ${p.name} case`, mode: "AI", agent: "content", tags: ["Case study", "Sales"], after: [1, 3], risk: "medium" },
+          { title: `Approve and publish ${p.name} case study`, mode: "YOU", humanKind: "decision", tags: ["Case study"], after: [1, 2], risk: "medium" },
         ],
       });
     }
 
-    if (p.stage === "deployed" && !has("launch")) {
+    // Just deployed → AI-generated post-launch mission.
+    if (p.stage === "deployed" && !has("launch") && now - p.lastActivityAt < 5 * DAY) {
       out.push({
         key: `post-launch:${p.id}`,
         projectId: p.id,
         title: `${p.name} is live — run post-launch checks`,
-        summary: `${p.name} was deployed. I'll audit performance and mobile, then fix what's critical. You only approve the fixes before they reach production.`,
+        summary: `${p.name} was just deployed. I'll audit performance and mobile, then fix what's critical. You only approve the fixes before they reach production.`,
         drafts: [
           { title: `Run ${p.name} performance audit`, mode: "AI", agent: "analyst", tags: ["Launch", "Analysis"] },
           { title: `Run ${p.name} mobile QA`, mode: "AI", agent: "coding", tags: ["Launch", "Code"] },
           { title: `Fix critical ${p.name} issues`, mode: "AI", agent: "coding", tags: ["Launch", "Code"], after: [0, 1], risk: "medium" },
-        ],
-      });
-    }
-
-    const stale = now - p.lastActivityAt > 4 * DAY && mine.some(isOpen);
-    if (stale) {
-      out.push({
-        key: `stalled:${p.id}`,
-        projectId: p.id,
-        title: `${p.name} has stalled`,
-        summary: `No progress on ${p.name} for ${Math.floor((now - p.lastActivityAt) / DAY)} days. I can diagnose what's blocking it; the keep-or-kill call is yours.`,
-        drafts: [
-          { title: `Diagnose what's blocking ${p.name}`, mode: "AI", agent: "analyst", tags: ["Analysis"] },
-          { title: `Decide: continue, pause or stop ${p.name}`, mode: "YOU", humanKind: "decision", tags: ["Decision"], after: [0] },
         ],
       });
     }
@@ -405,32 +396,6 @@ export function morningBriefing(state: WorkspaceState, now: number): Briefing {
     headline = `Your most valuable action today is to ${verb}${when}. ${aiLine}.`;
   }
   return { headline, you: wf.you.slice(0, 3), ai: aiTasks.slice(0, 6), waiting: wf.waiting, opportunities: opps.slice(0, 2) };
-}
-
-export interface DailyReport {
-  youDid: Task[];
-  aiDid: Task[];
-  savedMinutes: number;
-  stillImportant: Task[];
-  tomorrow: Task | null;
-  tomorrowPrep: string[];
-}
-
-export function dailyReport(state: WorkspaceState, now: number): DailyReport {
-  const since = startOfToday(now, state.settings.tzOffsetMin);
-  const doneToday = state.tasks.filter((t) => t.status === "done" && (t.completedAt ?? 0) >= since);
-  const aiDid = doneToday.filter((t) => t.mode === "AI" || (t.parentId !== null && t.mode !== "YOU"));
-  const youDid = doneToday.filter((t) => !aiDid.includes(t));
-  const wf = workforce(state, now);
-  const move = nextMove(state, now);
-  return {
-    youDid,
-    aiDid,
-    savedMinutes: timeSaved(state.jobs, since).minutes,
-    stillImportant: wf.you.filter((t) => t.humanValue >= 4).slice(0, 3),
-    tomorrow: move,
-    tomorrowPrep: move?.aiPrep.slice(0, 3) ?? [],
-  };
 }
 
 export function agentLoad(jobs: AgentJob[]) {

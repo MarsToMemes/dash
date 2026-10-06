@@ -5,6 +5,7 @@ import { useState } from "react";
 import { AGENT_ORDER, AGENTS } from "@/lib/agents";
 import { fmtDuration, startOfToday, startOfWeek, timeSaved } from "@/lib/planner";
 import { useNow, useWorkspace } from "../store";
+import { AutomationReport, EfficiencyCard, LeverageCard, SavedTriplet, WeeklyReport } from "../intel/Reports";
 import { AGENT_ICON, AnimatedNumber, enter, SectionTitle } from "../ui";
 
 const DAY = 86_400_000;
@@ -43,13 +44,18 @@ export function Insights() {
       <motion.section variants={enter} custom={0} className="relative overflow-hidden rounded-[32px] bg-hero p-8 text-hero-ink sm:p-12">
         <div className="ambient-light" aria-hidden />
         <div className="relative">
-          <div className="text-[11px] font-bold tracking-[0.18em] text-hero-ink-2 uppercase">AI saved you · this week</div>
-          <AnimatedNumber value={week.minutes} format={fmtDuration} duration={2} className="mt-3 block text-[64px] leading-none font-semibold tracking-[-0.04em] sm:text-[104px]" />
+          <div className="mb-4 text-[11px] font-bold tracking-[0.18em] text-hero-ink-2 uppercase">AI saved you</div>
+          <SavedTriplet now={now} />
           <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.9, duration: 0.6 }} className="mt-4 text-[18px] text-hero-ink-2">
             You got <span className="font-semibold text-hero-ink">{fmtDuration(week.minutes)}</span> of your life back. {week.count} tasks completed by your AI workforce.
           </motion.p>
         </div>
       </motion.section>
+
+      <motion.div variants={enter} custom={1} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <LeverageCard now={now} />
+        <EfficiencyCard now={now} />
+      </motion.div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <motion.section variants={enter} custom={1} className="xl:col-span-7">
@@ -110,6 +116,14 @@ export function Insights() {
           </p>
         </div>
       </motion.section>
+      <motion.div variants={enter} custom={4} className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="xl:col-span-5">
+          <AutomationReport now={now} />
+        </div>
+        <div className="xl:col-span-7">
+          <WeeklyReport now={now} />
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

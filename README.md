@@ -45,11 +45,42 @@ ANTHROPIC_API_KEY=… npm run dev
 
 Vitesse de simulation : 1 minute d'agent = 3 s (`simSecondsPerMinute` dans les settings).
 
+## Couche d'intelligence — Mission Optimizer
+
+Tout est dans `lib/optimizer.ts` : des fonctions pures, testées (`tests/optimizer.test.ts`), utilisées à la fois par le moteur serveur et par l'UI. La question qu'elles traitent : quelle combinaison d'actions humaines et d'actions IA crée le plus de progrès par heure de ton attention ?
+
+| Moteur | Fonction | Où le voir |
+|---|---|---|
+| Human leverage (0–10) | `humanLeverage` | badge sur chaque carte, Next Move |
+| Impact / time value | `taskImpact`, `timeValue` | classement, arbitrage |
+| Décision du moment (do / why / meanwhile / after / don't) | `decideNow` | carte Next Move |
+| Priorité de la file IA (ce qui te débloque passe d'abord) | `aiPriority`, `rankAll` | AI Queue, moteur |
+| Time arbitrage + exécution parallèle | `timeArbitrage`, `parallelExecutionPlanner` | Strategy, ⌘K « I have 45 minutes » |
+| Simulate my day (Finish / Build / Revenue / Balanced) + Build my day | `simulateDay` | Strategy |
+| Momentum projet | `projectMomentum` | accueil, Projects |
+| Finish what matters + Focus projet | `finishWhatMatters`, `focusPlan` | accueil, Projects |
+| Projets morts / surcharge / arbitrage stratégique | `deadProjects`, `portfolioTriage`, `strategicTradeOff` | « AI found this », Strategy |
+| Procrastination | `procrastination` | « AI found this » |
+| Human unblock | `unblockActions` | « AI found this » |
+| AI saved you, human leverage, workflow efficiency | `savedSummary`, `humanLeverageKpi`, `workflowEfficiency` | accueil, Insights |
+| Automation report, daily / weekly review | `automationReport`, `dailyReview`, `weeklyReview` | Insights, Today |
+| Mémoire des décisions | table `decisions`, `parseIntent` | Strategy → Tell your Chief of Staff |
+
+**Maximum leverage** : l'IA prend, prépare et relance tout ce qu'elle peut (le risque moyen s'arrête toujours pour approbation, le risque élevé n'est jamais lancé seul) ; seule la colonne « You » garde ce qui a un leverage ≥ 6.
+
+**Limites honnêtes de cette couche :**
+- Les scores sont des pondérations écrites à la main, pas un modèle appris. Ils sont explicables (chaque score donne ses raisons) mais à recalibrer avec ton usage réel.
+- Énergie et lieu sont déclarés par toi (sélecteurs), pas détectés.
+- « Tell your Chief of Staff » comprend focus / pause + projet + durée (FR/EN) ; le reste est enregistré comme note, sans interprétation.
+- Le « human leverage » n'est mesuré que si tu utilises Start → Done ; sinon il repose sur les estimations.
+- Sans connecteur calendrier / email / GitHub, l'optimiseur ne voit que ce qui est dans l'app.
+
 ## Architecture
 
 ```
 lib/
-  types.ts         modèle de domaine (Task, AgentJob, Project, Opportunity…)
+  types.ts         modèle de domaine (Task, AgentJob, Project, Opportunity, Decision…)
+  optimizer.ts     Mission Optimizer — leverage, arbitrage, simulation, détecteurs, métriques
   classifier.ts    qui exécute quoi — pur, partagé client/serveur
   planner.ts       next move, workforce, plan du jour, pipeline, briefings, découvertes
   agents.ts        les 6 agents spécialisés

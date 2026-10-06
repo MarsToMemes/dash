@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { ArrowRight, GripVertical, Play } from "lucide-react";
 import { AnimatePresence, motion, Reorder } from "motion/react";
 import { useEffect, useState } from "react";
+import { suppressedByFocus, suppressedByLeverage } from "@/lib/optimizer";
 import { fmtDuration, workforce } from "@/lib/planner";
 import type { Task } from "@/lib/types";
 import { useWorkspace } from "../store";
@@ -15,6 +16,10 @@ export function Workforce({ now }: { now: number }) {
   const { state, act, thinking, setView } = useWorkspace();
   if (!state) return null;
   const wf = workforce(state, now);
+  // ONLY YOU radar: Maximum Leverage hides low-leverage work, Focus mutes other projects.
+  const hidden = wf.you.filter((t) => suppressedByLeverage(t, state) || suppressedByFocus(t, state, now));
+  const delegable = hidden.filter((t) => t.keptHuman && t.agent);
+  wf.you = wf.you.filter((t) => !hidden.includes(t));
   const youMinutes = wf.you.reduce((s, t) => s + (t.humanMinutes || 5), 0);
   const running = wf.ai.filter((a) => a.job?.status === "RUNNING").length;
 
@@ -40,6 +45,18 @@ export function Workforce({ now }: { now: number }) {
         <motion.div animate={lane("you")} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }} className="rounded-[26px] bg-panel p-3 ring-1 ring-line sm:p-4">
           <ColumnHead color="var(--human)" title="You" sub={`${wf.you.length} action${wf.you.length === 1 ? "" : "s"} · ${fmtDuration(youMinutes)}`} />
           <YouList tasks={wf.you} now={now} />
+          {hidden.length > 0 && (
+            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-dashed border-line-2 px-4 py-3 text-[12.5px] text-ink-2">
+              <span className="min-w-0 flex-1">
+                {hidden.length} hidden — {state.settings.maxLeverage ? "low leverage" : "outside your focus"}
+              </span>
+              {delegable.length > 0 && (
+                <Button size="sm" variant="ai" onClick={() => act({ type: "run_all", taskIds: delegable.map((t) => t.id) })}>
+                  Delegate {delegable.length}
+                </Button>
+              )}
+            </div>
+          )}
         </motion.div>
 
         <motion.div animate={lane("ai")} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }} className="rounded-[26px] bg-panel p-3 ring-1 ring-line sm:p-4">

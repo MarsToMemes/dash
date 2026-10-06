@@ -5,10 +5,11 @@ import { ArrowRight, Check, Clock, CornerDownRight, Hourglass, MapPin, Play, Spa
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { AGENTS } from "@/lib/agents";
+import { humanLeverage } from "@/lib/optimizer";
 import { fmtClock, fmtDuration } from "@/lib/planner";
 import type { AgentJob, Task } from "@/lib/types";
 import { useWorkspace } from "./store";
-import { AgentAvatar, Button, CheckDraw, Chip, humanIcon, Morph, ProgressLine, spring, Tag } from "./ui";
+import { AgentAvatar, Button, CheckDraw, Chip, humanIcon, LeverageBadge, Morph, ProgressLine, spring, Tag } from "./ui";
 
 const RECENT = 8000;
 
@@ -118,7 +119,10 @@ function YouBody({ task, job, project, now, handoff }: { task: Task; job: AgentJ
           <Icon size={19} strokeWidth={2.2} />
         </span>
         <div className="min-w-0 flex-1">
-          <Chip className={clsx("!h-5 !px-0", approval ? "text-ai" : "text-human")}>{label}</Chip>
+          <div className="flex items-center justify-between gap-2">
+            <Chip className={clsx("!h-5 !px-0", approval ? "text-ai" : "text-human")}>{label}</Chip>
+            <LeverageBadge score={humanLeverage(task, state?.projects.find((p) => p.id === task.projectId) ?? null).score} />
+          </div>
           <h3 className="mt-0.5 text-[16.5px] leading-snug font-semibold tracking-tight text-ink">{task.title}</h3>
           <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1">
             <Meta>

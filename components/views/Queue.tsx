@@ -4,7 +4,8 @@ import clsx from "clsx";
 import { Check, Pause, Play, ShieldAlert, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { AGENTS } from "@/lib/agents";
-import { agentLoad, fmtClock, fmtDuration, startOfToday } from "@/lib/planner";
+import { aiPriority } from "@/lib/optimizer";
+import { agentLoad, fmtClock, fmtDuration, startOfToday, workforce } from "@/lib/planner";
 import type { AgentJob, Task } from "@/lib/types";
 import { ActivityFeed } from "../home/Sections";
 import { useNow, useWorkspace } from "../store";
@@ -18,10 +19,16 @@ export function Queue() {
   const byId = new Map(state.tasks.map((t) => [t.id, t]));
   const pair = (j: AgentJob) => ({ job: j, task: byId.get(j.task_id) }) as { job: AgentJob; task: Task | undefined };
   const running = state.jobs.filter((j) => j.status === "RUNNING").map(pair);
+  // Same order the engine uses: what unblocks Rémi first, not first-come-first-served.
+  const prio = (j: AgentJob) => {
+    const t = byId.get(j.task_id);
+    return t ? aiPriority(t, state, now).score : 0;
+  };
   const queued = state.jobs
     .filter((j) => j.status === "QUEUED")
-    .sort((a, b) => a.created_at - b.created_at)
+    .sort((a, b) => prio(b) - prio(a) || a.created_at - b.created_at)
     .map(pair);
+  const backlog = workforce(state, now).suggested;
   const approvals = state.jobs.filter((j) => j.status === "WAITING_FOR_APPROVAL").map(pair);
   const failed = state.jobs.filter((j) => j.status === "FAILED").map(pair);
   const doneToday = state.jobs
@@ -85,6 +92,49 @@ export function Queue() {
           <Lane title="Next" dot="var(--ai)" count={queued.length} empty={["Queue empty", "Delegate something, or turn on autopilot."]}>
             {queued.map(({ job, task }, i) => task && <JobRow key={job.id} job={job} task={task} now={now} next={i === 0} />)}
           </Lane>
+          <section>
+            <SectionTitle dot="var(--ai)" count={backlog.length} right={backlog.length > 1 ? (
+              <Button size="sm" variant="ai" onClick={() => act({ type: "run_all", taskIds: backlog.map((t) => t.id) })}>
+                <Play size={12} fill="currentColor" /> Run all
+              </Button>
+            ) : undefined}>
+              AI backlog
+            </SectionTitle>
+            <div className="card overflow-x-auto rounded-[24px] p-3">
+              {backlog.length === 0 ? (
+                <Empty title="Backlog empty" body="Everything the AI could do is running or done." />
+              ) : (
+                <table className="w-full min-w-[560px] text-left text-[13px]">
+                  <thead>
+                    <tr className="text-[10.5px] font-bold tracking-[0.12em] text-ink-3 uppercase">
+                      <th className="px-3 py-2 font-bold">Task</th>
+                      <th className="px-3 py-2 font-bold">Agent</th>
+                      <th className="px-3 py-2 font-bold">AI time</th>
+                      <th className="px-3 py-2 font-bold">Could save</th>
+                      <th className="px-3 py-2 font-bold">Risk</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backlog.map((t) => (
+                      <tr key={t.id} className="border-t border-line">
+                        <td className="px-3 py-2.5 font-medium">{t.title}</td>
+                        <td className="px-3 py-2.5 text-ink-2">{t.agent ? AGENTS[t.agent].short : "—"}</td>
+                        <td className="tabular px-3 py-2.5 text-ink-2">{t.aiMinutes} min</td>
+                        <td className="tabular px-3 py-2.5 text-ok">{fmtDuration(Math.max(0, t.manualMinutes - t.humanMinutes))}</td>
+                        <td className={clsx("px-3 py-2.5 text-[11px] font-bold uppercase", t.risk === "low" ? "text-ok" : t.risk === "medium" ? "text-warn" : "text-bad")}>{t.risk}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <button onClick={() => act({ type: "run_task", taskId: t.id })} className="rounded-full px-2.5 py-1 text-[11px] font-bold tracking-[0.1em] text-ai uppercase hover:bg-ai-soft">
+                            Run
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
           {failed.length > 0 && (
             <Lane title="Failed" dot="var(--bad)" count={failed.length} empty={["", ""]}>
               {failed.map(({ job, task }) => task && <FailedRow key={job.id} job={job} task={task} />)}
@@ -145,9 +195,10 @@ function JobRow({ job, task, now, next }: { job: AgentJob; task: Task; now: numb
           {running ? (
             <span className="shimmer-text truncate">{job.current_step}</span>
           ) : (
-            <span>
+            <span className="truncate">
               {next ? "Up next" : "Queued"} · est. {task.aiMinutes} min
               {job.scheduled_for && job.scheduled_for > now ? ` · at ${fmtClock(job.scheduled_for, tz)}` : ""}
+              {state ? ` · ${aiPriority(task, state, now).reason}` : ""}
             </span>
           )}
         </div>

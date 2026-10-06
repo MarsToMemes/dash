@@ -1,13 +1,14 @@
 "use client";
 
 import clsx from "clsx";
-import { Sparkles } from "lucide-react";
+import { Archive, Sparkles, Target } from "lucide-react";
 import { motion } from "motion/react";
+import { isParked, projectMomentum } from "@/lib/optimizer";
 import { isOpen, PIPELINE, pipelineStage, projectProgress } from "@/lib/planner";
 import type { Task } from "@/lib/types";
 import { OpportunityCard } from "../home/Sections";
 import { useNow, useWorkspace } from "../store";
-import { AnimatedNumber, enter, HEALTH_META, HealthDot, SectionTitle } from "../ui";
+import { AnimatedNumber, Button, enter, HEALTH_META, HealthDot, SectionTitle } from "../ui";
 
 function Ring({ value, color }: { value: number; color: string }) {
   const r = 22;
@@ -43,7 +44,7 @@ function Pipeline({ tasks }: { tasks: Task[] }) {
 
 export function Projects() {
   const now = useNow(2000);
-  const { state, setDrawerId } = useWorkspace();
+  const { state, setDrawerId, act } = useWorkspace();
   if (!state) return null;
   const missions = state.tasks.filter((t) => t.isMission);
 
@@ -63,8 +64,16 @@ export function Projects() {
           const ai = open.filter((t) => (t.mode === "AI" || t.mode === "AI_YOU") && t.status !== "your_turn" && t.status !== "awaiting_approval").length;
           const waiting = open.filter((t) => t.status === "waiting").length;
           const opp = state.opportunities.find((o) => o.projectId === p.id && o.status === "open");
+          const m = projectMomentum(p, state, now);
+          const parked = isParked(p, now);
+          const focused = state.settings.focus?.projectId === p.id && state.settings.focus.until > now;
           return (
-            <motion.article key={p.id} layout whileHover={{ y: -3 }} className="relative overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink shadow-[var(--shadow-card)]">
+            <motion.article
+              key={p.id}
+              layout
+              whileHover={{ y: -3 }}
+              className={clsx("relative overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink shadow-[var(--shadow-card)]", parked && "opacity-60", focused && "ring-2 ring-ai")}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -73,6 +82,10 @@ export function Projects() {
                   </div>
                   <h2 className="mt-2 text-[22px] font-semibold tracking-tight">{p.name}</h2>
                   <p className="mt-1 text-[12.5px] text-hero-ink-2">{p.description}</p>
+                  <p className="mt-2 text-[12.5px]">
+                    <span className="text-hero-ink-2">Goal: </span>
+                    {p.goal ?? <span className="text-bad">undefined</span>}
+                  </p>
                 </div>
                 <div className="relative grid place-items-center">
                   <Ring value={progress} color={p.color} />
@@ -82,10 +95,40 @@ export function Projects() {
               <div className="mt-6">
                 <Pipeline tasks={mine} />
               </div>
-              <div className="mt-5 flex gap-5 text-[12.5px] text-hero-ink-2">
+              <div className="mt-5 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-hero-ink-2">
                 <span><b className="text-human">{you}</b> you</span>
                 <span><b className="text-ai">{ai}</b> AI</span>
                 <span><b className="text-hero-ink">{waiting}</b> waiting</span>
+                <span className="ml-auto">
+                  Momentum <b className="tabular text-hero-ink">{m.score}</b> · <span className="capitalize">{m.label}</span>
+                </span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {parked ? (
+                  <Button size="sm" variant="inverse" onClick={() => act({ type: "revive_project", projectId: p.id })}>
+                    Revive
+                  </Button>
+                ) : focused ? (
+                  <Button size="sm" variant="ghost" className="!text-hero-ink-2 hover:!bg-white/10" onClick={() => act({ type: "exit_focus" })}>
+                    End focus
+                  </Button>
+                ) : (
+                  open.length > 0 && (
+                    <Button size="sm" variant="inverse" onClick={() => act({ type: "focus_project", projectId: p.id, days: 2 })}>
+                      <Target size={13} /> Focus this project
+                    </Button>
+                  )
+                )}
+                {!parked && open.length > 0 && (
+                  <Button size="sm" variant="ghost" className="!text-hero-ink-2 hover:!bg-white/10" onClick={() => act({ type: "park_project", projectId: p.id, days: 7 })}>
+                    <Archive size={13} /> Park 7 days
+                  </Button>
+                )}
+                {parked && p.parkedUntil && (
+                  <span className="self-center text-[12px] text-hero-ink-2">
+                    Parked until {new Date(p.parkedUntil - state.settings.tzOffsetMin * 60_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}
+                  </span>
+                )}
               </div>
               {opp && (
                 <div className="mt-4 flex items-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2 text-[12.5px]">

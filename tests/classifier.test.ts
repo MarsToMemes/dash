@@ -12,6 +12,8 @@ const cases: [string, string, string | null][] = [
   ["Make a competitive analysis for Jobsy", "AI", "research"],
   ["Research 10 Patrick Pons competitors", "AI", "research"],
   ["Fix the checkout bug", "AI", "coding"],
+  ["Fix Jobsy signup form validation", "AI", "coding"],
+  ["Valider la maquette finale", "AI_YOU", "design"],
   ["Generate product page components", "AI", "coding"],
   ["Improve Patrick Pons website SEO", "AI", "content"],
   ["Audit your portfolio website", "AI", "analyst"],

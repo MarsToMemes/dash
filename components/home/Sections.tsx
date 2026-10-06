@@ -1,145 +1,24 @@
 "use client";
 
 import clsx from "clsx";
-import { Bot, ChevronRight, Hourglass, Lightbulb, Play, Sparkles, User, X, Zap } from "lucide-react";
+import { Bot, Lightbulb, Pencil, Sparkles, User, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { AGENTS } from "@/lib/agents";
-import { fmtClock, fmtDuration, isOpen, planDay, projectProgress, startOfWeek, timeSaved, workforce } from "@/lib/planner";
+import { fmtClock, fmtDuration, planDay } from "@/lib/planner";
 import type { Activity, Opportunity } from "@/lib/types";
 import { useWorkspace } from "../store";
-import { AGENT_ICON, AnimatedNumber, Button, easeOut, Empty, HEALTH_META, HealthDot, humanIcon, ProgressLine, SectionTitle } from "../ui";
+import { AGENT_ICON, Button, easeOut, humanIcon, SectionTitle } from "../ui";
 
-// ---------------------------------------------------------------------------
-// KPI tiles (top-row cards from the reference)
-
-export function Kpis({ now }: { now: number }) {
-  const { state, setView } = useWorkspace();
-  if (!state) return null;
-  const wf = workforce(state, now);
-  const week = timeSaved(state.jobs, startOfWeek(now, state.settings.tzOffsetMin));
-  const queued = wf.ai.filter((a) => a.job?.status === "QUEUED").length;
-  const running = wf.ai.length - queued;
-  const youMin = wf.you.reduce((s, t) => s + (t.humanMinutes || 5), 0);
-  const followUps = state.tasks.filter((t) => t.title.startsWith("Draft follow-up") && isOpen(t)).length;
-
-  const tiles = [
-    { label: "Only you", value: wf.you.length, sub: `${fmtDuration(youMin)} of your time`, icon: User, tone: "text-human bg-human-soft", onClick: () => {} },
-    { label: "AI workforce", value: wf.ai.length, sub: `${running} running · ${queued} queued`, icon: Sparkles, tone: "text-ai bg-ai-soft", onClick: () => setView("queue") },
-    { label: "Waiting", value: wf.waiting.length, sub: followUps ? `${followUps} follow-up${followUps > 1 ? "s" : ""} drafted` : "Monitored by AI", icon: Hourglass, tone: "text-ink-2 bg-card-2", onClick: () => {} },
-  ];
-  return (
-    <div className="grid h-full grid-cols-2 gap-3 [&>*]:min-w-0">
-      {tiles.map((t) => {
-        const Icon = t.icon;
-        return (
-          <motion.button
-            key={t.label}
-            whileHover={{ y: -2 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            onClick={t.onClick}
-            className="card flex flex-col rounded-[24px] p-4 text-left sm:p-5"
-          >
-            <div className="flex items-center gap-3">
-              <span className={clsx("grid h-10 w-10 place-items-center rounded-xl", t.tone)}>
-                <Icon size={18} strokeWidth={2.2} />
-              </span>
-              <span className="text-[13px] leading-tight text-ink-2">{t.label}</span>
-            </div>
-            <div className="mt-auto pt-5">
-              <AnimatedNumber value={t.value} className="text-[34px] leading-none font-semibold tracking-tight" />
-              <div className="mt-1.5 truncate text-[12px] text-ink-3">{t.sub}</div>
-            </div>
-          </motion.button>
-        );
-      })}
-      <motion.button whileHover={{ y: -2 }} onClick={() => setView("insights")} className="card flex flex-col rounded-[24px] p-4 text-left sm:p-5">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-ok/12 text-ok">
-            <Zap size={18} strokeWidth={2.2} />
-          </span>
-          <span className="text-[13px] leading-tight text-ink-2">AI saved you</span>
-        </div>
-        <div className="mt-auto pt-5">
-          <AnimatedNumber value={week.minutes} format={fmtDuration} duration={1.6} className="text-[30px] leading-none font-semibold tracking-tight" />
-          <div className="mt-1.5 text-[12px] text-ink-3">{week.count} tasks this week</div>
-        </div>
-      </motion.button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// AI FOUND THIS — proactive missions and delegable work
-
-export function AiFoundThis({ now }: { now: number }) {
-  const { state, act, setView } = useWorkspace();
-  if (!state) return null;
-  const opps = state.opportunities.filter((o) => o.status === "open");
-  const suggested = workforce(state, now).suggested;
-
-  return (
-    <section>
-      <SectionTitle dot="var(--ai)">AI found this</SectionTitle>
-      <div className="flex flex-col gap-3">
-        <AnimatePresence initial={false} mode="popLayout">
-          {suggested.length > 0 && (
-            <motion.div layout key="suggested" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} className="card rounded-[24px] p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[16px] font-semibold tracking-tight">I found {suggested.length} task{suggested.length > 1 ? "s" : ""} I can handle for you.</div>
-                  <div className="mt-1 text-[12.5px] text-ink-3">
-                    About {fmtDuration(suggested.reduce((s, t) => s + t.manualMinutes, 0))} of manual work · no human involvement
-                  </div>
-                </div>
-                <Button size="sm" variant="ai" onClick={() => act({ type: "run_all", taskIds: suggested.map((t) => t.id) })}>
-                  <Play size={12} fill="currentColor" /> Run all
-                </Button>
-              </div>
-              <ol className="mt-4 flex flex-col">
-                <AnimatePresence initial={false}>
-                  {suggested.slice(0, 5).map((t, i) => {
-                    const Icon = t.agent ? AGENT_ICON[t.agent] : Bot;
-                    return (
-                      <motion.li
-                        key={t.id}
-                        layout
-                        exit={{ opacity: 0, x: 24, transition: { duration: 0.25 } }}
-                        className="group flex items-center gap-3 border-t border-line py-2.5 first:border-t-0"
-                      >
-                        <span className="tabular w-4 text-[12px] text-ink-3">{i + 1}</span>
-                        <Icon size={15} className="shrink-0 text-ai" />
-                        <span className="min-w-0 flex-1 truncate text-[13.5px]">{t.title}</span>
-                        <span className="hidden text-[11.5px] text-ink-3 sm:inline">~{t.aiMinutes} min</span>
-                        <button onClick={() => act({ type: "run_task", taskId: t.id })} className="rounded-full px-2.5 py-1 text-[11px] font-bold tracking-[0.1em] text-ai uppercase hover:bg-ai-soft">
-                          Run
-                        </button>
-                      </motion.li>
-                    );
-                  })}
-                </AnimatePresence>
-              </ol>
-            </motion.div>
-          )}
-          {opps.slice(0, 2).map((o) => (
-            <OpportunityCard key={o.id} o={o} />
-          ))}
-        </AnimatePresence>
-        {opps.length > 2 && (
-          <button onClick={() => setView("projects")} className="self-start rounded-full px-3 py-1.5 text-[12.5px] font-semibold text-ai hover:bg-ai-soft">
-            + {opps.length - 2} more AI-generated mission{opps.length - 2 > 1 ? "s" : ""} in Projects
-          </button>
-        )}
-        {suggested.length === 0 && opps.length === 0 && <Empty title="Nothing new" body="I’ll surface opportunities as your projects move." />}
-      </div>
-    </section>
-  );
-}
-
+/** AI-GENERATED MISSION: accept, dismiss, or modify (keep only the steps you want). */
 export function OpportunityCard({ o, compact = false }: { o: Opportunity; compact?: boolean }) {
   const { state, act } = useWorkspace();
+  const [editing, setEditing] = useState(false);
+  const [keep, setKeep] = useState<Set<number>>(() => new Set(o.drafts.map((_, i) => i)));
   const project = state?.projects.find((p) => p.id === o.projectId);
-  const aiSteps = o.drafts.filter((d) => d.mode !== "YOU").length;
+  const kept = o.drafts.filter((_, i) => keep.has(i));
+  const aiSteps = kept.filter((d) => d.mode !== "YOU").length;
+  const saved = kept.filter((d) => d.mode !== "YOU" && d.agent).reduce((s, d) => s + AGENTS[d.agent!].manualMinutes, 0);
   return (
     <motion.div
       layout
@@ -148,15 +27,38 @@ export function OpportunityCard({ o, compact = false }: { o: Opportunity; compac
       exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }}
       className={clsx("rounded-[24px] p-5", compact ? "bg-card-2" : "card")}
     >
-      <div className="flex items-center gap-2 text-[10.5px] font-bold tracking-[0.14em] text-ai uppercase">
-        <Lightbulb size={13} /> Opportunity{project ? ` · ${project.name}` : ""}
+      <div className="flex flex-wrap items-center gap-2 text-[10.5px] font-bold tracking-[0.14em] uppercase">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-ai-soft px-2 py-1 text-ai">
+          <Bot size={12} /> AI generated
+        </span>
+        <span className="text-ink-3">
+          <Lightbulb size={12} className="mr-1 inline" />
+          Opportunity{project ? ` · ${project.name}` : ""}
+        </span>
       </div>
       <div className="mt-2 text-[16px] font-semibold tracking-tight">{o.title}</div>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{o.summary}</p>
       <ol className="mt-3 flex flex-col gap-1.5">
         {o.drafts.map((d, i) => (
-          <li key={i} className="flex items-center gap-2.5 text-[13px]">
-            <span className="tabular w-4 text-[12px] text-ink-3">{i + 1}</span>
+          <li key={i} className={clsx("flex items-center gap-2.5 text-[13px]", !keep.has(i) && "text-ink-3 line-through")}>
+            {editing ? (
+              <input
+                type="checkbox"
+                aria-label={`Keep ${d.title}`}
+                checked={keep.has(i)}
+                onChange={() =>
+                  setKeep((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(i)) next.delete(i);
+                    else next.add(i);
+                    return next;
+                  })
+                }
+                className="h-4 w-4 accent-[var(--ai)]"
+              />
+            ) : (
+              <span className="tabular w-4 text-[12px] text-ink-3">{i + 1}</span>
+            )}
             <span className="min-w-0 flex-1 truncate">{d.title}</span>
             <span className={clsx("text-[10.5px] font-bold tracking-[0.1em] uppercase", d.mode === "YOU" ? "text-human" : "text-ai")}>
               {d.mode === "YOU" ? "You" : "AI"}
@@ -164,12 +66,21 @@ export function OpportunityCard({ o, compact = false }: { o: Opportunity; compac
           </li>
         ))}
       </ol>
-      <div className="mt-4 flex items-center gap-2">
-        <Button size="sm" variant="ai" onClick={() => act({ type: "accept_opportunity", opportunityId: o.id })}>
-          <Sparkles size={13} /> {aiSteps > 1 ? `Execute ${aiSteps} AI tasks` : "Do it"}
+      {saved > 0 && <div className="mt-3 text-[12px] text-ink-3">Estimated human time saved: {fmtDuration(saved)}</div>}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="ai"
+          disabled={kept.length === 0}
+          onClick={() => act({ type: "accept_opportunity", opportunityId: o.id, include: keep.size === o.drafts.length ? undefined : [...keep] })}
+        >
+          <Sparkles size={13} /> {editing ? "Accept selection" : aiSteps > 2 ? "Prepare everything" : aiSteps > 1 ? `Execute ${aiSteps} AI tasks` : "Accept"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditing((v) => !v)}>
+          <Pencil size={13} /> {editing ? "Done editing" : "Modify"}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => act({ type: "dismiss_opportunity", opportunityId: o.id })}>
-          <X size={13} /> Not now
+          <X size={13} /> Dismiss
         </Button>
       </div>
     </motion.div>
@@ -283,72 +194,6 @@ export function TodayTimeline({ now, tall = false }: { now: number; tall?: boole
             <span className="h-px flex-1 -translate-y-1/2 bg-bad/70" />
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// PROJECT PULSE — health at a glance, with contextual AI signals
-
-export function ProjectPulse({ now }: { now: number }) {
-  const { state } = useWorkspace();
-  const [open, setOpen] = useState<string | null>(null);
-  if (!state) return null;
-  return (
-    <section>
-      <SectionTitle dot="var(--ok)">Project pulse</SectionTitle>
-      <div className="card rounded-[26px] p-2">
-        {state.projects.map((p) => {
-          const opp = state.opportunities.find((o) => o.projectId === p.id && o.status === "open");
-          const progress = projectProgress(p, state.tasks);
-          const expanded = open === p.id && opp;
-          return (
-            <motion.div layout key={p.id} className="rounded-2xl">
-              <button
-                onClick={() => setOpen(expanded ? null : p.id)}
-                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-card-2"
-                aria-expanded={Boolean(expanded)}
-              >
-                <HealthDot health={p.health} changedAt={p.healthChangedAt} now={now} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-[14px] font-semibold">{p.name}</span>
-                    {opp && (
-                      <motion.span
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="inline-flex items-center gap-1 rounded-full bg-ai-soft px-1.5 py-0.5 text-[10px] font-bold text-ai"
-                        title="AI found something"
-                      >
-                        <Sparkles size={10} /> 1
-                      </motion.span>
-                    )}
-                  </span>
-                  <span className="text-[11.5px] text-ink-3">{HEALTH_META[p.health].label}</span>
-                </span>
-                <span className="w-20">
-                  <ProgressLine value={progress} tone={p.health === "on_track" ? "ok" : "ai"} />
-                </span>
-                <AnimatedNumber value={Math.round(progress * 100)} format={(n) => `${Math.round(n)}%`} className="w-10 text-right text-[12.5px] text-ink-2" />
-                {opp && <ChevronRight size={14} className={clsx("text-ink-3 transition-transform", expanded && "rotate-90")} />}
-              </button>
-              <AnimatePresence initial={false}>
-                {expanded && opp && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.35, ease: easeOut }}
-                    className="overflow-hidden px-2 pb-2"
-                  >
-                    <OpportunityCard o={opp} compact />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          );
-        })}
       </div>
     </section>
   );

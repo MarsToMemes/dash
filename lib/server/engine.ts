@@ -3,19 +3,33 @@ import { randomUUID } from "node:crypto";
 import { AGENTS } from "../agents.ts";
 import { classifyTask, delegationPhrase } from "../classifier.ts";
 import {
+  aiPriority,
+  humanLeverage,
+  isParked,
+  needsHuman,
+  parseIntent,
+  portfolioTriage,
+  rankAll,
+  selectDrafts,
+  simulateDay,
+  workflowEfficiency,
+} from "../optimizer.ts";
+import {
   computeHealth,
   discoverOpportunities,
+  fmtDuration,
   isOpen,
   isUnblocked,
   nextMove,
   projectProgress,
-  rankTasks,
+  startOfToday,
 } from "../planner.ts";
 import type {
   Action,
   Activity,
   AgentJob,
   AgentRole,
+  Decision,
   Task,
   TaskAnalysis,
   TaskDraft,
@@ -67,6 +81,7 @@ function snapshot(s: Store): WorkspaceState {
     jobs: s.state.jobs,
     activity: s.state.activity.slice(0, 80),
     opportunities: s.state.opportunities,
+    decisions: s.state.decisions,
     settings: s.state.settings,
     claudeEnabled: claudeEnabled(),
   };
@@ -137,6 +152,8 @@ export function newTask(partial: Partial<Task> & Pick<Task, "title">, now: numbe
     keptHuman: false,
     autoRun: false,
     isMission: false,
+    postponedCount: 0,
+    actualHumanMinutes: null,
     createdAt: now,
     startedAt: null,
     completedAt: null,
@@ -356,7 +373,8 @@ function afterDone(s: Store, done: Task, now: number) {
     t.unlockedAt = now;
     t.unlockedBy = done.title;
     save(s, t);
-    log(s, now, "system", "unlock", `Unlocked: ${t.title}`, t.id);
+    if (needsHuman(t) || t.mode === "YOU") log(s, now, "system", "handoff", `You’re unblocked — “${t.title}” is ready for you`, t.id);
+    else log(s, now, "system", "unlock", `Unlocked: ${t.title}`, t.id);
     const aiSide = t.mode === "AI" || t.mode === "AI_YOU";
     if (aiSide && !t.keptHuman && (t.autoRun || (s.state.settings.autopilot && t.risk === "low"))) {
       enqueue(s, t, now);
@@ -420,15 +438,64 @@ export function advance(s: Store, now: number) {
   const st = s.state;
   const settings = st.settings;
 
-  // DELEGATE — autopilot picks up low-risk, AI-executable work.
-  if (settings.autopilot) {
+  const projectById = new Map(st.projects.map((p) => [p.id, p]));
+  const parked = (t: Task) => isParked(t.projectId ? projectById.get(t.projectId) ?? null : null, now);
+  let changed = false;
+
+  // Expire focus and parking decisions.
+  if (settings.focus && settings.focus.until <= now) {
+    log(s, now, "system", "system", `Focus on ${projectById.get(settings.focus.projectId)?.name ?? "project"} ended`, null);
+    settings.focus = null;
+    s.touchSettings();
+    changed = true;
+  }
+  for (const p of st.projects) {
+    if (p.parkedUntil && p.parkedUntil <= now) {
+      p.parkedUntil = null;
+      s.touch("project", p.id);
+      log(s, now, "system", "system", `${p.name} is back from parking — worth a look`, null);
+      changed = true;
+    }
+  }
+
+  // DELEGATE — autopilot takes low-risk work; Maximum Leverage and Focus take
+  // everything the AI can prepare (medium risk still stops for approval).
+  {
     const byId = new Map(st.tasks.map((t) => [t.id, t]));
+    const focusId = settings.focus?.projectId ?? null;
     for (const t of st.tasks) {
-      if (t.status !== "todo" || t.keptHuman || t.isMission || t.risk !== "low") continue;
+      if (t.status !== "todo" || t.keptHuman || t.isMission || !t.agent || parked(t)) continue;
       if (t.mode !== "AI" && t.mode !== "AI_YOU") continue;
       if (!isUnblocked(t, byId)) continue;
+      const why =
+        settings.autopilot && t.risk === "low"
+          ? "Autopilot picked up"
+          : settings.maxLeverage && t.risk !== "high"
+            ? "Maximum leverage: delegated"
+            : focusId && t.projectId === focusId && t.risk !== "high"
+              ? "Focus: delegated"
+              : null;
+      if (!why) continue;
       const job = enqueue(s, t, now);
-      if (job) log(s, now, t.agent ?? "system", "start", `Autopilot picked up ${lower(t.title)}`, t.id);
+      if (job) log(s, now, t.agent, "start", `${why} ${lower(t.title)}`, t.id);
+    }
+    // Maximum Leverage / Focus: prepare every human action the AI can prepare.
+    if (settings.maxLeverage || focusId) {
+      for (const t of [...st.tasks]) {
+        if (t.status !== "todo" || t.mode !== "YOU" || !t.aiPrep.length || !t.agent || parked(t)) continue;
+        if (!settings.maxLeverage && t.projectId !== focusId) continue;
+        if (st.tasks.some((c) => c.parentId === t.id)) continue;
+        createPrep(s, t, now);
+      }
+    }
+    // Maximum Leverage: don't let blocked work sit — follow up after a day of silence.
+    if (settings.maxLeverage) {
+      for (const t of st.tasks) {
+        if (t.status === "waiting" && t.followUpAt && t.followUpAt > now && now - t.createdAt > DAY && !st.tasks.some((c) => c.parentId === t.id && isOpen(c))) {
+          t.followUpAt = now;
+          save(s, t);
+        }
+      }
     }
   }
 
@@ -466,10 +533,11 @@ export function advance(s: Store, now: number) {
   }
 
   // EXECUTE — one job per agent at a time; the workforce runs in parallel.
+  // The queue is not first-come-first-served: work that unblocks Rémi goes first.
   const busy = new Set(st.jobs.filter((j) => j.status === "RUNNING").map((j) => j.agent));
   const queued = st.jobs
     .filter((j) => j.status === "QUEUED" && (!j.scheduled_for || j.scheduled_for <= now))
-    .sort((a, b) => priorityOf(s, a) - priorityOf(s, b) || a.created_at - b.created_at);
+    .sort((a, b) => priorityOf(s, b, now) - priorityOf(s, a, now) || a.created_at - b.created_at);
   for (const j of queued) {
     if (busy.has(j.agent)) continue;
     startJob(s, j, now);
@@ -495,7 +563,10 @@ export function advance(s: Store, now: number) {
     }
     j.progress = progress;
     s.touch("job", j.id);
-    if (j.executor === "simulated" && progress >= 1) finishJob(s, j, now, simulatedResult(t, j));
+    if (j.executor === "simulated" && progress >= 1) {
+      finishJob(s, j, now, simulatedResult(t, j));
+      changed = true;
+    }
   }
 
   // OBSERVE — project progress and health.
@@ -511,6 +582,7 @@ export function advance(s: Store, now: number) {
       p.health = health;
       p.healthChangedAt = now;
       s.touch("project", p.id);
+      changed = true;
     }
   }
 
@@ -522,14 +594,26 @@ export function advance(s: Store, now: number) {
     st.opportunities.push(o);
     s.touch("opportunity", o.id);
     log(s, now, "analyst", "discover", `Found an opportunity: ${prop.title}`, null);
+    changed = true;
+  }
+
+  // REASSESS — priorities are not static: re-rank whenever the workspace changes,
+  // unless Rémi just ordered his list by hand.
+  if (changed && (!settings.manualOrderAt || now - settings.manualOrderAt > 30 * MIN)) rerank(s, now);
+
+  // Daily snapshot of workflow efficiency (for the trend).
+  const today = startOfToday(now, settings.tzOffsetMin);
+  const last = settings.efficiencyHistory[settings.efficiencyHistory.length - 1];
+  if (!last || last.day < today) {
+    settings.efficiencyHistory.push({ day: today, score: workflowEfficiency({ ...st, settings }, now).score });
+    if (settings.efficiencyHistory.length > 60) settings.efficiencyHistory.shift();
+    s.touchSettings();
   }
 }
 
-function priorityOf(s: Store, j: AgentJob): number {
+function priorityOf(s: Store, j: AgentJob, now: number): number {
   const t = task(s, j.task_id);
-  if (!t) return 99;
-  const feedsHuman = t.parentId !== null && !task(s, t.parentId)?.isMission;
-  return (feedsHuman ? 0 : 10) + ({ critical: 0, high: 1, medium: 2, low: 3 } as const)[t.priority];
+  return t ? aiPriority(t, s.state, now).score : -1;
 }
 
 function healthLabel(h: string) {
@@ -541,7 +625,7 @@ function lower(title: string) {
 }
 
 function rerank(s: Store, now: number) {
-  const ranks = rankTasks(s.state.tasks, now);
+  const ranks = rankAll(s.state, now);
   for (const t of s.state.tasks) {
     const r = ranks.get(t.id) ?? 999;
     if (t.rank !== r) {
@@ -663,6 +747,10 @@ function apply(s: Store, action: Action, now: number, analysis: TaskAnalysis | n
       const prevMove = nextMove(st, now);
       t.status = "done";
       t.completedAt = now;
+      if (t.startedAt && (t.mode === "YOU" || t.keptHuman || t.mode === "AI_YOU")) {
+        const planned = t.humanMinutes || t.manualMinutes || 30;
+        t.actualHumanMinutes = Math.max(1, Math.min(planned * 4, Math.round((now - t.startedAt) / MIN)));
+      }
       save(s, t);
       bumpProject(s, t, now);
       log(s, now, "you", "human", `You completed ${lower(t.title)}`, t.id);
@@ -764,7 +852,9 @@ function apply(s: Store, action: Action, now: number, analysis: TaskAnalysis | n
       if (!o || o.status !== "open") return;
       o.status = "accepted";
       s.touch("opportunity", o.id);
-      const chain = createChain(s, o.drafts, { projectId: o.projectId, source: "ai" }, now);
+      const drafts = selectDrafts(o.drafts, action.include);
+      if (!drafts.length) return;
+      const chain = createChain(s, drafts, { projectId: o.projectId, source: "ai" }, now);
       const byId = new Map(st.tasks.map((t) => [t.id, t]));
       let started = 0;
       for (const c of chain) {
@@ -806,6 +896,8 @@ function apply(s: Store, action: Action, now: number, analysis: TaskAnalysis | n
     }
 
     case "reorder": {
+      st.settings.manualOrderAt = now;
+      s.touchSettings();
       action.taskIds.forEach((tid, i) => {
         const t = task(s, tid);
         if (t) {
@@ -838,6 +930,294 @@ function apply(s: Store, action: Action, now: number, analysis: TaskAnalysis | n
     case "dismiss_day_update": {
       st.settings.dayUpdate = null;
       s.touchSettings();
+      return;
+    }
+
+    case "postpone": {
+      const t = task(s, action.taskId);
+      if (!t || !isOpen(t)) return;
+      t.postponedCount += 1;
+      // "Not now" is a decision: push it to the end and let manual order stand for a while.
+      t.rank = Math.max(...st.tasks.map((x) => x.rank)) + 1;
+      save(s, t);
+      st.settings.manualOrderAt = now;
+      s.touchSettings();
+      log(s, now, "you", "human", `You postponed ${lower(t.title)}${t.postponedCount >= 3 ? ` — ${t.postponedCount} times now` : ""}`, t.id);
+      return;
+    }
+
+    case "procrastination_answer": {
+      const t = task(s, action.taskId);
+      if (!t || !isOpen(t)) return;
+      if (action.choice === "break_down") {
+        const step = newTask(
+          {
+            title: `Break “${t.title}” into 25-minute steps`,
+            projectId: t.projectId,
+            parentId: t.id,
+            mode: "AI",
+            automation: 100,
+            agent: "operations",
+            humanValue: 1,
+            priority: t.priority,
+            aiMinutes: 6,
+            manualMinutes: 20,
+            reason: "A vague task becomes three concrete ones. The first step should take less than 25 minutes.",
+            tags: ["Breakdown"],
+            source: "ai",
+            autoRun: true,
+          },
+          now,
+        );
+        st.tasks.push(step);
+        save(s, step);
+        enqueue(s, step, now, { reason: "Breaking down" });
+        t.humanMinutes = Math.min(t.humanMinutes || 25, 25);
+      } else if (action.choice === "delegate") {
+        const a = classifyTask(t.title);
+        t.mode = a.agent ? "AI" : "AI_YOU";
+        t.agent = a.agent ?? "operations";
+        t.automation = a.agent ? 75 : 50;
+        t.keptHuman = false;
+        t.delegatedAt = now;
+        t.aiMinutes = a.aiMinutes || AGENTS[t.agent].aiMinutes;
+        t.reason = "You kept postponing it — the AI takes the first pass, you review.";
+        save(s, t);
+        enqueue(s, t, now, { reason: "Delegated after repeated postponement" });
+      } else if (action.choice === "delete") {
+        t.status = "cancelled";
+        save(s, t);
+        log(s, now, "you", "human", `Deleted ${lower(t.title)} — it wasn’t actually important`, t.id);
+      }
+      t.postponedCount = 0;
+      save(s, t);
+      if (action.choice === "keep") decide(s, now, "note", `Keep “${t.title}”`, "Postponed several times but still matters.", null, t.projectId, null);
+      rerank(s, now);
+      return;
+    }
+
+    case "focus_project": {
+      const p = st.projects.find((x) => x.id === action.projectId);
+      if (!p) return;
+      const days = Math.max(1, Math.min(14, action.days));
+      st.settings.focus = { projectId: p.id, until: now + days * DAY, goal: p.goal, startedAt: now };
+      s.touchSettings();
+      if (p.parkedUntil) {
+        p.parkedUntil = null;
+        s.touch("project", p.id);
+      }
+      decide(s, now, "focus", `Focus ${p.name} for ${days} day${days > 1 ? "s" : ""}`, p.goal ? `Reach: ${p.goal}` : "Finish what matters", p.goal, p.id, now + days * DAY);
+      // Shortest path: delegate everything delegable, prepare human steps, generate the AI missions.
+      let delegated = 0;
+      for (const t of st.tasks) {
+        if (t.projectId !== p.id || t.status !== "todo" || t.isMission || t.keptHuman || !t.agent) continue;
+        if ((t.mode === "AI" || t.mode === "AI_YOU") && t.risk !== "high" && enqueue(s, t, now)) delegated++;
+      }
+      for (const t of [...st.tasks]) {
+        if (t.projectId === p.id && t.status === "todo" && t.mode === "YOU" && t.aiPrep.length && t.agent && !st.tasks.some((c) => c.parentId === t.id)) createPrep(s, t, now);
+      }
+      for (const o of st.opportunities.filter((x) => x.projectId === p.id && x.status === "open")) {
+        apply(s, { type: "accept_opportunity", opportunityId: o.id }, now, null);
+      }
+      log(s, now, "system", "system", `Focus mode: ${p.name} — ${delegated} task${delegated === 1 ? "" : "s"} delegated, distractions muted`, null);
+      st.settings.manualOrderAt = null;
+      rerank(s, now);
+      return;
+    }
+
+    case "exit_focus": {
+      const f = st.settings.focus;
+      if (!f) return;
+      st.settings.focus = null;
+      s.touchSettings();
+      for (const d of st.decisions) {
+        if (d.kind === "focus" && d.projectId === f.projectId && (!d.until || d.until > now)) {
+          d.until = now;
+          s.touch("decision", d.id);
+        }
+      }
+      log(s, now, "you", "system", `Focus ended early`, null);
+      rerank(s, now);
+      return;
+    }
+
+    case "set_max_leverage": {
+      st.settings.maxLeverage = action.on;
+      s.touchSettings();
+      log(
+        s,
+        now,
+        "system",
+        "system",
+        action.on ? "Maximum leverage on — the AI takes, prepares and follows up everything it can" : "Maximum leverage off",
+        null,
+      );
+      rerank(s, now);
+      return;
+    }
+
+    case "set_context": {
+      if (action.energy) st.settings.energy = action.energy;
+      if (action.place) st.settings.place = action.place;
+      s.touchSettings();
+      rerank(s, now);
+      return;
+    }
+
+    case "build_day": {
+      const minutes = Math.max(30, Math.min(12 * 60, action.minutes));
+      const sim = simulateDay(st, minutes, now);
+      const plan = sim.strategies.find((x) => x.id === action.strategy);
+      if (!plan) return;
+      // Human schedule: commit flexible blocks to the calendar.
+      for (const h of plan.plan.human) {
+        const t = task(s, h.task.id);
+        if (t && !t.scheduledAt) {
+          t.scheduledAt = h.start;
+          save(s, t);
+        }
+      }
+      // AI schedule: accept the AI-generated missions it relies on, then run everything in parallel.
+      const opps = new Set(plan.plan.ai.filter((a) => a.draft).map((a) => a.draft!.opportunityId));
+      for (const oid of opps) apply(s, { type: "accept_opportunity", opportunityId: oid }, now, null);
+      for (const a of plan.plan.ai) {
+        if (!a.task) continue;
+        const t = task(s, a.task.id);
+        if (t && t.status === "todo") enqueue(s, t, now, { scheduledFor: a.start > now + 5 * MIN ? a.start : null });
+      }
+      st.settings.dayPlan = {
+        strategy: plan.id,
+        createdAt: now,
+        minutes,
+        blocks: [
+          ...plan.plan.human.map((h) => ({ taskId: h.task.id, title: h.task.title, lane: "you" as const, start: h.start, end: h.end, agent: null })),
+          ...plan.plan.ai.map((a) => ({ taskId: a.task?.id ?? "", title: a.task?.title ?? a.draft?.title ?? "", lane: "ai" as const, start: a.start, end: a.end, agent: a.agent })),
+        ],
+      };
+      s.touchSettings();
+      decide(s, now, "strategy", `${plan.label} day (${fmtDuration(minutes)})`, plan.goal, `${plan.plan.human.length} human missions, ${plan.plan.ai.length} AI missions in parallel`, null, now + DAY);
+      log(s, now, "system", "system", `Day built: ${plan.label} — ${plan.plan.human.length} things for you, ${plan.plan.ai.length} for the AI in parallel`, null);
+      st.settings.manualOrderAt = null;
+      rerank(s, now);
+      return;
+    }
+
+    case "clear_day_plan": {
+      st.settings.dayPlan = null;
+      s.touchSettings();
+      return;
+    }
+
+    case "park_project": {
+      const p = st.projects.find((x) => x.id === action.projectId);
+      if (!p) return;
+      const days = Math.max(1, Math.min(60, action.days));
+      parkProject(s, p.id, days, action.reason ?? "Losing momentum", now);
+      rerank(s, now);
+      return;
+    }
+
+    case "revive_project": {
+      const p = st.projects.find((x) => x.id === action.projectId);
+      if (!p) return;
+      p.parkedUntil = null;
+      p.lastActivityAt = now;
+      s.touch("project", p.id);
+      decide(s, now, "revive", `Revive ${p.name}`, "Still worth it — restart with a clear next step.", p.goal, p.id, null);
+      if (!p.goal) {
+        const t = newTask(
+          {
+            title: `Define the next milestone for ${p.name}`,
+            projectId: p.id,
+            mode: "YOU",
+            humanKind: "decision",
+            humanValue: 4,
+            priority: "high",
+            humanMinutes: 15,
+            manualMinutes: 15,
+            reason: "A project without a milestone drifts. Decide what “done for now” means.",
+            tags: ["Decision"],
+            source: "ai",
+          },
+          now,
+        );
+        st.tasks.push(t);
+        save(s, t);
+      }
+      log(s, now, "you", "system", `${p.name} revived`, null);
+      rerank(s, now);
+      return;
+    }
+
+    case "apply_triage": {
+      const t = portfolioTriage(st, now);
+      for (const x of t.park) parkProject(s, x.project.id, 7, x.reason, now);
+      decide(
+        s,
+        now,
+        "strategy",
+        `Primary: ${t.primary.map((x) => x.project.name).join(" + ")}`,
+        t.primary.map((x) => `${x.project.name}: ${x.reason}`).join(" "),
+        t.park.length ? `Parked: ${t.park.map((x) => x.project.name).join(", ")}` : null,
+        null,
+        now + 7 * DAY,
+      );
+      rerank(s, now);
+      return;
+    }
+
+    case "tradeoff_answer": {
+      const winner = st.projects.find((x) => x.id === action.winnerId);
+      const loser = st.projects.find((x) => x.id === action.loserId);
+      if (!winner || !loser) return;
+      const chosen = action.accepted ? winner : loser;
+      const other = action.accepted ? loser : winner;
+      decide(
+        s,
+        now,
+        "tradeoff",
+        `${chosen.name} over ${other.name} for ${action.days} days`,
+        action.accepted ? "Accepted the Chief of Staff’s recommendation." : "Overrode the recommendation.",
+        chosen.goal,
+        chosen.id,
+        now + action.days * DAY,
+      );
+      apply(s, { type: "focus_project", projectId: chosen.id, days: action.days }, now, null);
+      return;
+    }
+
+    case "tell": {
+      const text = action.text.trim().slice(0, 500);
+      if (!text) return;
+      const intent = parseIntent(text, st.projects, now, st.settings.tzOffsetMin);
+      if (intent.kind === "focus" && intent.projectId) {
+        apply(s, { type: "focus_project", projectId: intent.projectId, days: intent.days }, now, null);
+      } else if (intent.kind === "park" && intent.projectId) {
+        parkProject(s, intent.projectId, intent.days, text, now);
+        rerank(s, now);
+      } else {
+        decide(s, now, "note", text, "Noted from you.", null, intent.projectId, null);
+        log(s, now, "you", "system", `Noted: “${text}”`, null);
+      }
+      return;
+    }
+
+    case "automate": {
+      const added = action.phrases.map((p) => p.toLowerCase().trim()).filter((p) => p && !st.settings.delegationRules.includes(p));
+      st.settings.delegationRules.push(...added);
+      s.touchSettings();
+      // Open work matching the new rules moves to the AI right away.
+      for (const t of st.tasks) {
+        if (!isOpen(t) || !t.agent || !t.keptHuman) continue;
+        const a = classifyTask(t.title, { delegationRules: added });
+        if (a.reason.startsWith("You asked me")) {
+          t.keptHuman = false;
+          t.mode = "AI";
+          save(s, t);
+        }
+      }
+      if (added.length) decide(s, now, "automate", `Always delegate: ${added.join(", ")}`, "Recurring work an agent can own.", null, null, null);
+      log(s, now, "system", "system", `Automated ${added.length} recurring task type${added.length === 1 ? "" : "s"}`, null);
       return;
     }
 
@@ -878,4 +1258,43 @@ function createPrep(s: Store, human: Task, now: number) {
   s.state.tasks.push(prep);
   save(s, prep);
   enqueue(s, prep, now, { reason: "Preparing" });
+}
+
+function decide(
+  s: Store,
+  now: number,
+  kind: Decision["kind"],
+  title: string,
+  reason: string,
+  expected: string | null,
+  projectId: string | null,
+  until: number | null,
+) {
+  const d: Decision = { id: id(), at: now, kind, title, reason, expected, projectId, until };
+  s.state.decisions.unshift(d);
+  s.touch("decision", d.id);
+}
+
+function parkProject(s: Store, projectId: string, days: number, reason: string, now: number) {
+  const p = s.state.projects.find((x) => x.id === projectId);
+  if (!p) return;
+  p.parkedUntil = now + days * DAY;
+  s.touch("project", p.id);
+  // Stop queued work; running jobs finish.
+  for (const j of s.state.jobs) {
+    const t = task(s, j.task_id);
+    if (j.status === "QUEUED" && t?.projectId === p.id) {
+      j.status = "CANCELLED";
+      j.completed_at = now;
+      s.touch("job", j.id);
+      t.status = "todo";
+      save(s, t);
+    }
+  }
+  if (s.state.settings.focus?.projectId === p.id) {
+    s.state.settings.focus = null;
+    s.touchSettings();
+  }
+  decide(s, now, "park", `Park ${p.name} for ${days} days`, reason, null, p.id, now + days * DAY);
+  log(s, now, "system", "system", `${p.name} parked for ${days} days — out of your head, not lost`, null);
 }

@@ -47,7 +47,7 @@ const HUMAN_SIGNALS: HumanSignal[] = [
   { kind: "onsite", re: /\b(visit|visite[rz]?|on site|sur place|showroom|go to|aller (a|au|chez)|photo ?shoot|shooting|take (photos|pictures)|prendre des photos|photographier)\b/, factor: "On-site presence", minutes: 90, value: 5 },
   { kind: "relationship", re: /\b(negotiat\w*|negocie[rz]?|negociation|convince|convaincre|networking|network|relationship|relation|thank|remercier)\b/, factor: "Relationship + negotiation", minutes: 30, value: 5 },
   { kind: "meeting", re: /\b(present|presenting|presenter|presentation|pitch to|demo to|keynote|talk at)\b/, factor: "Presenting in person", minutes: 45, value: 5 },
-  { kind: "decision", re: /\b(approve|approuver|valide[rz]?|validation|choose|choisir|decide|decider|decision|select|selectionner|arbitrer|sign[- ]off|final (direction|design|call)|go\/no[- ]go)\b/, factor: "Your judgment", minutes: 15, value: 4 },
+  { kind: "decision", re: /\b(approve|approuver|valide[rz]?|choose|choisir|decide|decider|decision|select|selectionner|arbitrer|sign[- ]off|final (direction|design|call)|go\/no[- ]go)\b/, factor: "Your judgment", minutes: 15, value: 4 },
   { kind: "review", re: /\b(review|relire|revoir|feedback on)\b/, factor: "Your review", minutes: 15, value: 3 },
 ];
 

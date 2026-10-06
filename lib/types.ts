@@ -90,6 +90,10 @@ export interface Task {
   autoRun: boolean;
   /** A mission groups a chain of human + AI steps (children point to it via parentId). */
   isMission: boolean;
+  /** How many times Rémi pushed it back ("Not now") — procrastination signal. */
+  postponedCount: number;
+  /** Minutes Rémi actually spent (measured from Start → Done when available). */
+  actualHumanMinutes: number | null;
 
   createdAt: number;
   startedAt: number | null;
@@ -137,6 +141,8 @@ export interface AgentJob {
 
 export type ProjectHealth = "on_track" | "at_risk" | "attention" | "idle";
 export type ProjectStage = "idea" | "building" | "deployed" | "shipped";
+/** client: paid work · product: something Rémi is building · side: exploratory. */
+export type ProjectKind = "client" | "product" | "side";
 
 export interface Project {
   id: string;
@@ -150,6 +156,16 @@ export interface Project {
   /** Work finished before it was tracked here — keeps progress honest for older projects. */
   legacyDone: number;
   lastActivityAt: number;
+  kind: ProjectKind;
+  /** 1–5: how much this project matters for Rémi's direction (portfolio, positioning). */
+  strategicValue: number;
+  /** 1–5: how directly it can turn into money or clients. */
+  revenuePotential: number;
+  /** The next meaningful milestone, in plain words. null = undefined milestone (a warning sign). */
+  goal: string | null;
+  deadline: number | null;
+  /** Parked projects are kept out of recommendations until `parkedUntil`. */
+  parkedUntil: number | null;
 }
 
 export interface TaskDraft {
@@ -195,8 +211,46 @@ export interface Activity {
   taskId: string | null;
 }
 
+export type Energy = "high" | "medium" | "low";
+export type Place = "desk" | "on_the_go" | "out";
+
+export interface FocusState {
+  projectId: string;
+  until: number;
+  goal: string | null;
+  startedAt: number;
+}
+
+export interface DayPlanBlock {
+  taskId: string;
+  title: string;
+  lane: "you" | "ai";
+  start: number;
+  end: number;
+  agent: AgentRole | null;
+}
+
+export interface DayPlan {
+  strategy: StrategyId;
+  createdAt: number;
+  minutes: number;
+  blocks: DayPlanBlock[];
+}
+
+export type StrategyId = "finish" | "build" | "revenue" | "balanced";
+
 export interface Settings {
   autopilot: boolean;
+  /** MAXIMUM LEVERAGE: delegate, prepare and follow up everything the AI can; keep only high-leverage human work. */
+  maxLeverage: boolean;
+  energy: Energy;
+  place: Place;
+  focus: FocusState | null;
+  dayPlan: DayPlan | null;
+  /** Daily snapshots of workflow efficiency, newest last (for "dropped from 91 → 87"). */
+  efficiencyHistory: { day: number; score: number }[];
+  /** Last time Rémi reordered his own list by hand — automatic re-ranking backs off for a while. */
+  manualOrderAt?: number | null;
   /** Real seconds per AI-minute for simulated jobs (demo speed). */
   simSecondsPerMinute: number;
   /** Local minutes-of-day. */
@@ -218,6 +272,21 @@ export interface Settings {
   } | null;
 }
 
+export type DecisionKind = "focus" | "tradeoff" | "park" | "revive" | "strategy" | "automate" | "note" | "postpone";
+
+/** Strategic memory: things Rémi decided, so the system stops re-asking. */
+export interface Decision {
+  id: string;
+  at: number;
+  kind: DecisionKind;
+  title: string;
+  reason: string;
+  expected: string | null;
+  projectId: string | null;
+  /** Decisions stop influencing recommendations after this time. */
+  until: number | null;
+}
+
 export interface WorkspaceState {
   now: number;
   projects: Project[];
@@ -225,6 +294,7 @@ export interface WorkspaceState {
   jobs: AgentJob[];
   activity: Activity[];
   opportunities: Opportunity[];
+  decisions: Decision[];
   settings: Settings;
   claudeEnabled: boolean;
 }
@@ -263,11 +333,25 @@ export type Action =
   | { type: "reject_job"; jobId: string }
   | { type: "cancel_job"; jobId: string }
   | { type: "retry_job"; jobId: string }
-  | { type: "accept_opportunity"; opportunityId: string }
+  | { type: "accept_opportunity"; opportunityId: string; include?: number[] }
   | { type: "dismiss_opportunity"; opportunityId: string }
   | { type: "set_autopilot"; on: boolean }
   | { type: "analyze" }
   | { type: "reorder"; taskIds: string[] }
   | { type: "delegation_answer"; yes: boolean }
   | { type: "dismiss_day_update" }
+  | { type: "postpone"; taskId: string }
+  | { type: "procrastination_answer"; taskId: string; choice: "break_down" | "delegate" | "delete" | "keep" }
+  | { type: "focus_project"; projectId: string; days: number }
+  | { type: "exit_focus" }
+  | { type: "set_max_leverage"; on: boolean }
+  | { type: "set_context"; energy?: Energy; place?: Place }
+  | { type: "build_day"; strategy: StrategyId; minutes: number }
+  | { type: "clear_day_plan" }
+  | { type: "park_project"; projectId: string; days: number; reason?: string }
+  | { type: "revive_project"; projectId: string }
+  | { type: "apply_triage" }
+  | { type: "tradeoff_answer"; winnerId: string; loserId: string; accepted: boolean; days: number }
+  | { type: "tell"; text: string }
+  | { type: "automate"; phrases: string[] }
   | { type: "reset" };
