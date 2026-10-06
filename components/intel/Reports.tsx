@@ -216,7 +216,7 @@ export function WeeklyReport({ now }: { now: number }) {
               <dd className="font-semibold">{w.next.secondary?.name ?? "—"}</dd>
             </div>
             <div>
-              <dt className="text-hero-ink-2">Park</dt>
+              <dt className="text-hero-ink-2">Pause</dt>
               <dd className="font-semibold">{w.next.park.map((p) => p.name).join(", ") || "—"}</dd>
             </div>
             <div>

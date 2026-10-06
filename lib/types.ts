@@ -348,7 +348,9 @@ export type Action =
   | { type: "set_context"; energy?: Energy; place?: Place }
   | { type: "build_day"; strategy: StrategyId; minutes: number }
   | { type: "clear_day_plan" }
-  | { type: "park_project"; projectId: string; days: number; reason?: string }
+  /** days: null = paused until Rémi resumes it. */
+  | { type: "park_project"; projectId: string; days: number | null; reason?: string }
+  | { type: "resume_project"; projectId: string }
   | { type: "revive_project"; projectId: string }
   | { type: "apply_triage" }
   | { type: "tradeoff_answer"; winnerId: string; loserId: string; accepted: boolean; days: number }

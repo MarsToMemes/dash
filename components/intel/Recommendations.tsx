@@ -119,10 +119,10 @@ export function Recommendations({ now, limit }: { now: number; limit?: number })
               <li key={s}>· {s}</li>
             ))}
           </ul>
-          <p className="mt-2 text-[12.5px] text-ink-3">Don’t carry it mentally forever. Recommendation: {dead.recommendation === "park" ? "park it for 7 days" : "revive it with a clear next step"}.</p>
+          <p className="mt-2 text-[12.5px] text-ink-3">Don’t carry it mentally forever. Recommendation: {dead.recommendation === "park" ? "pause it for 7 days" : "revive it with a clear next step"}.</p>
           <div className="mt-4 flex gap-2">
             <Button size="sm" variant={dead.recommendation === "park" ? "primary" : "soft"} onClick={() => act({ type: "park_project", projectId: dead.project.id, days: 7, reason: dead.signals.join(" · ") })}>
-              <Archive size={13} /> Park for 7 days
+              <Archive size={13} /> Pause for 7 days
             </Button>
             <Button size="sm" variant={dead.recommendation === "revive" ? "primary" : "soft"} onClick={() => act({ type: "revive_project", projectId: dead.project.id })}>
               Revive
@@ -185,7 +185,7 @@ export function Recommendations({ now, limit }: { now: number; limit?: number })
               [
                 ["Primary", triage.primary, "text-ok"],
                 ["Secondary", triage.secondary, "text-ai"],
-                ["Park", triage.park, "text-ink-3"],
+                ["Pause", triage.park, "text-ink-3"],
               ] as const
             ).map(([label, rows, tone]) =>
               rows.length ? (
@@ -203,7 +203,7 @@ export function Recommendations({ now, limit }: { now: number; limit?: number })
             )}
           </div>
           <Button size="sm" variant="primary" className="mt-4" onClick={() => act({ type: "apply_triage" })}>
-            Apply — park {triage.park.length} for 7 days
+            Apply — pause {triage.park.length} for 7 days
           </Button>
         </Card>
       ),

@@ -6,6 +6,7 @@ import {
   aiPriority,
   humanLeverage,
   isParked,
+  PAUSE_INDEFINITE_DAYS,
   needsHuman,
   parseIntent,
   portfolioTriage,
@@ -453,7 +454,7 @@ export function advance(s: Store, now: number) {
     if (p.parkedUntil && p.parkedUntil <= now) {
       p.parkedUntil = null;
       s.touch("project", p.id);
-      log(s, now, "system", "system", `${p.name} is back from parking — worth a look`, null);
+      log(s, now, "system", "system", `${p.name}’s pause is over — worth a look`, null);
       changed = true;
     }
   }
@@ -1111,8 +1112,25 @@ function apply(s: Store, action: Action, now: number, analysis: TaskAnalysis | n
     case "park_project": {
       const p = st.projects.find((x) => x.id === action.projectId);
       if (!p) return;
-      const days = Math.max(1, Math.min(60, action.days));
-      parkProject(s, p.id, days, action.reason ?? "Losing momentum", now);
+      const days = action.days === null ? null : Math.max(1, Math.min(365, action.days));
+      parkProject(s, p.id, days, action.reason ?? "Paused by you", now);
+      rerank(s, now);
+      return;
+    }
+
+    case "resume_project": {
+      const p = st.projects.find((x) => x.id === action.projectId);
+      if (!p || !p.parkedUntil) return;
+      p.parkedUntil = null;
+      p.lastActivityAt = now; // a fresh start: don't flag it as dead right away
+      s.touch("project", p.id);
+      for (const d of st.decisions) {
+        if (d.kind === "park" && d.projectId === p.id && (!d.until || d.until > now)) {
+          d.until = now;
+          s.touch("decision", d.id);
+        }
+      }
+      log(s, now, "you", "system", `${p.name} resumed`, null);
       rerank(s, now);
       return;
     }
@@ -1158,7 +1176,7 @@ function apply(s: Store, action: Action, now: number, analysis: TaskAnalysis | n
         "strategy",
         `Primary: ${t.primary.map((x) => x.project.name).join(" + ")}`,
         t.primary.map((x) => `${x.project.name}: ${x.reason}`).join(" "),
-        t.park.length ? `Parked: ${t.park.map((x) => x.project.name).join(", ")}` : null,
+        t.park.length ? `Paused: ${t.park.map((x) => x.project.name).join(", ")}` : null,
         null,
         now + 7 * DAY,
       );
@@ -1275,10 +1293,10 @@ function decide(
   s.touch("decision", d.id);
 }
 
-function parkProject(s: Store, projectId: string, days: number, reason: string, now: number) {
+function parkProject(s: Store, projectId: string, days: number | null, reason: string, now: number) {
   const p = s.state.projects.find((x) => x.id === projectId);
   if (!p) return;
-  p.parkedUntil = now + days * DAY;
+  p.parkedUntil = now + (days ?? PAUSE_INDEFINITE_DAYS) * DAY;
   s.touch("project", p.id);
   // Stop queued work; running jobs finish.
   for (const j of s.state.jobs) {
@@ -1295,6 +1313,7 @@ function parkProject(s: Store, projectId: string, days: number, reason: string, 
     s.state.settings.focus = null;
     s.touchSettings();
   }
-  decide(s, now, "park", `Park ${p.name} for ${days} days`, reason, null, p.id, now + days * DAY);
-  log(s, now, "system", "system", `${p.name} parked for ${days} days — out of your head, not lost`, null);
+  const span = days === null ? "until you resume it" : `for ${days} day${days > 1 ? "s" : ""}`;
+  decide(s, now, "park", `Pause ${p.name} ${span}`, reason, null, p.id, days === null ? null : now + days * DAY);
+  log(s, now, "system", "system", `${p.name} paused ${span} — out of your head, not lost`, null);
 }

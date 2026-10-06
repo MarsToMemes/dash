@@ -1,9 +1,10 @@
 "use client";
 
 import clsx from "clsx";
-import { Archive, Sparkles, Target } from "lucide-react";
-import { motion } from "motion/react";
-import { isParked, projectMomentum } from "@/lib/optimizer";
+import { Pause, Play, Sparkles, Target, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
+import { isParked, pausedUntilLabel, projectMomentum } from "@/lib/optimizer";
 import { isOpen, PIPELINE, pipelineStage, projectProgress } from "@/lib/planner";
 import type { Task } from "@/lib/types";
 import { OpportunityCard } from "../home/Sections";
@@ -24,6 +25,46 @@ function Ring({ value, color }: { value: number; color: string }) {
         transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
       />
     </svg>
+  );
+}
+
+const PAUSE_OPTIONS: { label: string; days: number | null }[] = [
+  { label: "3 days", days: 3 },
+  { label: "1 week", days: 7 },
+  { label: "2 weeks", days: 14 },
+  { label: "1 month", days: 30 },
+  { label: "Until I resume", days: null },
+];
+
+/** Pause a project: pick how long, or until you resume it. */
+function PauseControl({ projectId }: { projectId: string }) {
+  const { act } = useWorkspace();
+  const [open, setOpen] = useState(false);
+  const ghost = "!text-hero-ink-2 hover:!bg-white/10 hover:!text-hero-ink";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Button size="sm" variant="ghost" className={ghost} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? <X size={13} /> : <Pause size={13} />} {open ? "Cancel" : "Pause"}
+      </Button>
+      <AnimatePresence>
+        {open &&
+          PAUSE_OPTIONS.map((o, i) => (
+            <motion.button
+              key={o.label}
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0, transition: { delay: i * 0.03 } }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
+              onClick={() => {
+                setOpen(false);
+                void act({ type: "park_project", projectId, days: o.days });
+              }}
+              className="h-8 rounded-full bg-white/[0.08] px-3 text-[12px] font-medium text-hero-ink hover:bg-white/[0.16]"
+            >
+              {o.label}
+            </motion.button>
+          ))}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -72,13 +113,13 @@ export function Projects() {
               key={p.id}
               layout
               whileHover={{ y: -3 }}
-              className={clsx("relative overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink shadow-[var(--shadow-card)]", parked && "opacity-60", focused && "ring-2 ring-ai")}
+              className={clsx("relative overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink shadow-[var(--shadow-card)] transition-opacity", parked && "opacity-70", focused && "ring-2 ring-ai")}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <HealthDot health={p.health} changedAt={p.healthChangedAt} now={now} />
-                    <span className="text-[12px] text-hero-ink-2">{HEALTH_META[p.health].label} · {p.stage}</span>
+                    <HealthDot health={parked ? "idle" : p.health} changedAt={p.healthChangedAt} now={now} />
+                    <span className="text-[12px] text-hero-ink-2">{parked ? "Paused" : HEALTH_META[p.health].label} · {p.stage}</span>
                   </div>
                   <h2 className="mt-2 text-[22px] font-semibold tracking-tight">{p.name}</h2>
                   <p className="mt-1 text-[12.5px] text-hero-ink-2">{p.description}</p>
@@ -105,9 +146,12 @@ export function Projects() {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {parked ? (
-                  <Button size="sm" variant="inverse" onClick={() => act({ type: "revive_project", projectId: p.id })}>
-                    Revive
-                  </Button>
+                  <>
+                    <Button size="sm" variant="inverse" onClick={() => act({ type: "resume_project", projectId: p.id })}>
+                      <Play size={12} fill="currentColor" /> Resume
+                    </Button>
+                    <span className="self-center text-[12px] text-hero-ink-2">{pausedUntilLabel(p, now, state.settings.tzOffsetMin)}</span>
+                  </>
                 ) : focused ? (
                   <Button size="sm" variant="ghost" className="!text-hero-ink-2 hover:!bg-white/10" onClick={() => act({ type: "exit_focus" })}>
                     End focus
@@ -119,16 +163,7 @@ export function Projects() {
                     </Button>
                   )
                 )}
-                {!parked && open.length > 0 && (
-                  <Button size="sm" variant="ghost" className="!text-hero-ink-2 hover:!bg-white/10" onClick={() => act({ type: "park_project", projectId: p.id, days: 7 })}>
-                    <Archive size={13} /> Park 7 days
-                  </Button>
-                )}
-                {parked && p.parkedUntil && (
-                  <span className="self-center text-[12px] text-hero-ink-2">
-                    Parked until {new Date(p.parkedUntil - state.settings.tzOffsetMin * 60_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}
-                  </span>
-                )}
+                {!parked && <PauseControl projectId={p.id} />}
               </div>
               {opp && (
                 <div className="mt-4 flex items-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2 text-[12.5px]">

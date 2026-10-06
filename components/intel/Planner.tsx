@@ -115,7 +115,7 @@ export function TellBox() {
           </button>
         ))}
       </div>
-      <p className="mt-3 text-[11.5px] text-ink-3">Focus and park decisions change recommendations right away; anything else is kept as a note.</p>
+      <p className="mt-3 text-[11.5px] text-ink-3">Focus and pause decisions change recommendations right away; anything else is kept as a note.</p>
     </div>
   );
 }
@@ -131,7 +131,7 @@ export function DecisionLog({ now }: { now: number }) {
         {state.decisions.slice(0, 20).map((d) => (
           <li key={d.id} className={clsx("border-l-2 pl-3", active.has(d.id) ? "border-ai" : "border-line-2 opacity-60")}>
             <div className="text-[11px] text-ink-3">
-              {new Date(d.at - state.settings.tzOffsetMin * 60_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} · {d.kind}
+              {new Date(d.at - state.settings.tzOffsetMin * 60_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} · {d.kind === "park" ? "pause" : d.kind}
               {d.until && active.has(d.id) ? ` · until ${new Date(d.until - state.settings.tzOffsetMin * 60_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}` : ""}
             </div>
             <div className="text-[13.5px] font-semibold">{d.title}</div>

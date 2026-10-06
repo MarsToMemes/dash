@@ -210,3 +210,13 @@ test("MODIFY an AI-generated mission: dropped steps are removed from dependencie
   const drafts = [{ title: "A" }, { title: "B", after: [0] }, { title: "C", after: [0, 1] }];
   assert.deepEqual(selectDrafts(drafts, [0, 2]), [{ title: "A", after: [] }, { title: "C", after: [0] }]);
 });
+
+test("pause: fixed duration or until resumed", async () => {
+  const { pausedUntilLabel, isParked, PAUSE_INDEFINITE_DAYS } = await import("../lib/optimizer.ts");
+  const week = project("p", { parkedUntil: NOW + 7 * DAY });
+  const forever = project("q", { parkedUntil: NOW + PAUSE_INDEFINITE_DAYS * DAY });
+  assert.ok(isParked(week, NOW) && isParked(forever, NOW));
+  assert.match(pausedUntilLabel(week, NOW, TZ)!, /^Paused until \d+ \w+/);
+  assert.equal(pausedUntilLabel(forever, NOW, TZ), "Paused until you resume it");
+  assert.equal(pausedUntilLabel(project("r"), NOW, TZ), null);
+});

@@ -183,7 +183,7 @@ export function ProjectMomentumList({ now }: { now: number }) {
   const rows = state.projects
     .map((p) => ({ p, m: projectMomentum(p, state, now) }))
     .sort((a, b) => Number(isParked(a.p, now)) - Number(isParked(b.p, now)) || b.m.score - a.m.score);
-  const labelTone = { accelerating: "text-ok", steady: "text-ai", slowing: "text-warn", stalled: "text-bad", parked: "text-ink-3", done: "text-ink-3" };
+  const labelTone = { accelerating: "text-ok", steady: "text-ai", slowing: "text-warn", stalled: "text-bad", paused: "text-ink-3", done: "text-ink-3" };
   return (
     <section>
       <SectionTitle dot="var(--ok)">Project momentum</SectionTitle>

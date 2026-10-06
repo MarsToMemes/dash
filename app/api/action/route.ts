@@ -8,7 +8,7 @@ const TYPES = new Set<Action["type"]>([
   "approve_job", "reject_job", "cancel_job", "retry_job", "accept_opportunity", "dismiss_opportunity",
   "set_autopilot", "analyze", "reorder", "delegation_answer", "dismiss_day_update", "reset",
   "postpone", "procrastination_answer", "focus_project", "exit_focus", "set_max_leverage", "set_context",
-  "build_day", "clear_day_plan", "park_project", "revive_project", "apply_triage", "tradeoff_answer", "tell", "automate",
+  "build_day", "clear_day_plan", "park_project", "resume_project", "revive_project", "apply_triage", "tradeoff_answer", "tell", "automate",
 ]);
 
 export async function POST(req: Request) {

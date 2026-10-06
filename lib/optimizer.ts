@@ -54,6 +54,16 @@ export function isParked(p: Project | null, now: number): boolean {
   return Boolean(p?.parkedUntil && p.parkedUntil > now);
 }
 
+/** A pause this long means "until I resume it". */
+export const PAUSE_INDEFINITE_DAYS = 3650;
+
+export function pausedUntilLabel(p: Project, now: number, tzOffsetMin: number): string | null {
+  if (!isParked(p, now)) return null;
+  if (p.parkedUntil! - now > 365 * DAY) return "Paused until you resume it";
+  const d = new Date(p.parkedUntil! - tzOffsetMin * MIN).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  return `Paused until ${d}`;
+}
+
 export function activeDecisions(state: Pick<State, "decisions">, now: number): Decision[] {
   return state.decisions.filter((d) => !d.until || d.until > now);
 }
@@ -309,7 +319,7 @@ export function rankAll(state: State, now: number): Map<string, number> {
 // ---------------------------------------------------------------------------
 // Momentum
 
-export type MomentumLabel = "accelerating" | "steady" | "slowing" | "stalled" | "parked" | "done";
+export type MomentumLabel = "accelerating" | "steady" | "slowing" | "stalled" | "paused" | "done";
 
 export interface Momentum {
   score: number;
@@ -350,7 +360,7 @@ export function projectMomentum(p: Project, state: State, now: number): Momentum
   if (blocked) reasons.push(`${blocked} blocked`);
   if (!p.goal) reasons.push("No defined milestone");
 
-  const label: MomentumLabel = isParked(p, now) ? "parked" : open.length === 0 ? "done" : score >= 70 ? "accelerating" : score >= 45 ? "steady" : score >= 25 ? "slowing" : "stalled";
+  const label: MomentumLabel = isParked(p, now) ? "paused" : open.length === 0 ? "done" : score >= 70 ? "accelerating" : score >= 45 ? "steady" : score >= 25 ? "slowing" : "stalled";
   return {
     score,
     label,
