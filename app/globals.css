@@ -1,0 +1,277 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-app: var(--app);
+  --color-panel: var(--panel);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-ink-3: var(--text-3);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-human: var(--human);
+  --color-human-soft: var(--human-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-idle: var(--idle);
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+  --color-hero: var(--hero);
+  --color-hero-ink: var(--hero-ink);
+  --color-hero-ink-2: var(--hero-ink-2);
+}
+
+/* Dark — "Today Tasks" reference: charcoal surfaces, blue action, warm accents. */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0e11;
+  --app: #15161a;
+  --panel: #1b1c21;
+  --card: #212228;
+  --card-2: #292a31;
+  --line: rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --text: #f4f4f6;
+  --text-2: #a3a5ad;
+  --text-3: #6c6f79;
+  --ai: #4f8cff;
+  --ai-soft: rgba(79, 140, 255, 0.14);
+  --human: #f4b54a;
+  --human-soft: rgba(244, 181, 74, 0.12);
+  --ok: #3ddc97;
+  --warn: #f4c34a;
+  --bad: #ff6b81;
+  --idle: #868a94;
+  --primary: #4f8cff;
+  --primary-ink: #ffffff;
+  --hero: #26231e;
+  --hero-ink: #fbf7f0;
+  --hero-ink-2: #b9b1a3;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.035) inset, 0 18px 40px -24px rgba(0, 0, 0, 0.7);
+  --shadow-lift: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 30px 60px -28px rgba(0, 0, 0, 0.85);
+  --backdrop:
+    radial-gradient(1200px 700px at -10% -20%, rgba(150, 170, 160, 0.22), transparent 60%),
+    radial-gradient(900px 700px at 110% 120%, rgba(190, 60, 60, 0.28), transparent 60%),
+    #101114;
+}
+
+/* Light — "iDraft" reference: frosted greys, white panels, black emphasis. */
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #d9d9db;
+  --app: rgba(238, 238, 240, 0.86);
+  --panel: rgba(255, 255, 255, 0.7);
+  --card: #ffffff;
+  --card-2: #f3f3f4;
+  --line: rgba(17, 18, 20, 0.07);
+  --line-2: rgba(17, 18, 20, 0.12);
+  --text: #121315;
+  --text-2: #5e6169;
+  --text-3: #9b9da4;
+  --ai: #2f6bff;
+  --ai-soft: rgba(47, 107, 255, 0.09);
+  --human: #b9770c;
+  --human-soft: rgba(214, 146, 30, 0.12);
+  --ok: #12a46b;
+  --warn: #c98a07;
+  --bad: #e0445e;
+  --idle: #8d9098;
+  --primary: #151618;
+  --primary-ink: #ffffff;
+  --hero: #1c1d20;
+  --hero-ink: #f6f6f7;
+  --hero-ink-2: #a5a7ad;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 18px 40px -26px rgba(0, 0, 0, 0.25);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.05), 0 30px 60px -30px rgba(0, 0, 0, 0.35);
+  --backdrop:
+    radial-gradient(900px 600px at 15% 10%, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(800px 700px at 90% 80%, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(600px 500px at 70% 10%, rgba(160, 160, 165, 0.35), transparent 70%),
+    #cfcfd2;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+body {
+  background: var(--backdrop);
+  background-attachment: fixed;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--ai-soft);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Ambient motion (Level 3). All transform/opacity — GPU friendly. -------- */
+
+/* ONLY YOU — an extremely slow warm breath. */
+.breathe {
+  position: relative;
+  isolation: isolate;
+}
+.breathe::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--human) 45%, transparent), 0 0 32px -6px color-mix(in srgb, var(--human) 40%, transparent);
+  opacity: 0.25;
+  animation: breathe 7s ease-in-out infinite;
+  z-index: -1;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* YOUR NEXT MOVE — slow light drifting across the card. */
+.ambient-light {
+  position: absolute;
+  inset: -40%;
+  pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--human) 26%, transparent), transparent 70%);
+  animation: drift 16s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes drift {
+  0% {
+    transform: translate3d(-18%, -10%, 0) scale(0.9);
+  }
+  100% {
+    transform: translate3d(22%, 12%, 0) scale(1.05);
+  }
+}
+
+/* AI working — a moving light on the progress track instead of a spinner. */
+.activity-light {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ai) 70%, white 30%), transparent);
+  animation: sweep 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  will-change: transform;
+}
+@keyframes sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+/* AI ANALYZING — tiny pulse. */
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+/* Health change — a signal ring travels out of the dot once. */
+.signal-ring {
+  animation: signal 1.4s cubic-bezier(0.22, 1, 0.36, 1) 2;
+}
+@keyframes signal {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+/* Text shimmer for thinking labels. */
+.shimmer-text {
+  background: linear-gradient(90deg, var(--text-2) 0%, var(--text) 40%, var(--text-2) 80%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* Intelligence scan line for the signature moment. */
+.scan-line {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 140px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ai) 10%, transparent), transparent);
+  animation: scan 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  z-index: 40;
+}
+@keyframes scan {
+  0% {
+    transform: translateY(-160px);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe::after,
+  .ambient-light,
+  .activity-light,
+  .pulse-dot,
+  .signal-ring,
+  .shimmer-text,
+  .scan-line {
+    animation: none !important;
+  }
+  .scan-line {
+    display: none;
+  }
+  .shimmer-text {
+    color: var(--text-2);
+  }
+}
